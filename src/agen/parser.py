@@ -39,6 +39,7 @@ class Parser:
             "agent": self._agent,
             "service": self._service,
             "deploy": self._deploy,
+            "parallel": self._parallel,
             "if": self._if,
             "while": self._while,
             "for": self._for,
@@ -254,6 +255,11 @@ class Parser:
         name = self._expect_ident("service name")
         options = self._with_options()
         return n.Service(name, options, self._block(), line=line)
+
+    def _parallel(self) -> n.Stmt:
+        line = self._advance().line
+        options = self._with_options()
+        return n.Parallel(options, self._block(), line=line)
 
     def _deploy(self) -> n.Stmt:
         line = self._advance().line

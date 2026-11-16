@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from . import nodes as n
+from .dotenv import load_dotenv
 from .durable import JournalStore
 from .errors import AgenError, AgenSyntaxError
 from .events import EventLog
@@ -27,6 +28,7 @@ def _load(path: Path) -> list[n.Stmt]:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    load_dotenv(args.file.resolve().parent / ".env")
     program = _load(args.file)
     interp = Interpreter(RuntimeOptions(state_dir=_state_dir(args), crash_after=args.crash_after,
                                         seed=args.seed, quiet=args.quiet))

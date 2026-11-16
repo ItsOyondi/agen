@@ -1,0 +1,5 @@
+The icons for languages other than Agen, and the seti.woff font, come from the
+Seti icon theme shipped with Visual Studio Code and Cursor. That theme is MIT
+licensed: https://github.com/microsoft/vscode/tree/main/extensions/theme-seti
+
+icons/agen.svg is the Agen mark and is covered by this project's LICENSE.

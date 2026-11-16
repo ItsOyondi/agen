@@ -17,6 +17,8 @@ Agen they are part of the language:
 | process supervisors                      | `service` restarts on crash, then alerts                   |
 | monitoring and alerting                  | structured event log + alerts (console and webhook)        |
 | separate Terraform / pipeline files      | `resource` + `deploy` in the same program                  |
+| thread pools, futures, connection pools  | `parallel { ... }`, `pmap`, `ask_all`, `jev_all`           |
+| an SDK per model provider                | `jev(text, questions)` for typed answers from TypeSafe JEV |
 
 ## Requirements for a first program
 
@@ -28,6 +30,7 @@ You can write and run Agen with only Python. A cloud account, an API key, and ex
 | Agen itself | This folder. It has no third-party dependencies. |
 | An editor | Any text editor. Save programs with the `.agn` extension. |
 | Optional | An OpenAI or Azure OpenAI key, only if an `agent` sets `provider` to `"openai"` or `"azure"`. The default `"mock"` provider works offline. |
+| Optional | A TypeSafe key (`TYPESAFE_API_KEY`), only if the program calls `jev` or `jev_all`. |
 
 Install the `agen` command once, from this folder:
 
@@ -182,10 +185,10 @@ fields and rebuilds the object on resume. See `examples/calculator.agn`.
 ### Fault-tolerance constructs
 
 **`workflow name(params) { ... }`**: a durable function. The run id is derived
-from the workflow name and its arguments, so calling it again with the same
-arguments resumes the same run. A run that already completed returns its saved
-result without re-executing (exactly-once semantics). Use `agen run --fresh` to
-start over.
+from the workflow name, its arguments, and the program text, so calling it
+again with the same arguments resumes the same run. A finished run returns its
+saved result. Editing the program, such as changing a prompt, starts a new run.
+Use `agen run --fresh` to rerun the same program from scratch.
 
 **`step name [with {options}] { ... } [fallback { ... }]`**: the unit of
 durability, used inside workflows. Options:
@@ -228,14 +231,92 @@ non-deterministic (network calls, `ask`, `now()`, `chaos()`) **inside a
 step** so that its result is journaled. Steps inside loops get stable keys
 (`classify`, `classify#1`, ...), and the same rule keeps those keys stable.
 
+## Speed: parallelism and JEV
+
+Agent and cloud programs spend most of their time waiting on the network.
+Agen speeds up that waiting in four ways, with no extra code:
+
+1. **Parallel execution.** Independent model and HTTP calls run at the same time.
+2. **One request, many questions.** `jev` asks every typed question about an input in a single call.
+3. **Connection reuse.** HTTP connections are kept alive and pooled, so later calls skip the TCP and TLS handshakes.
+4. **Caching.** With `cache: true`, an identical model request in the same run is answered from memory.
+
+Measured on the TypeSafe API: 6 `jev` requests took 1.64s one at a time and 0.32s with `jev_all`.
+
+**`parallel [with {workers: n}] { ... }`** runs each statement of the block at
+the same time, then continues when all of them are done. Each statement gets
+its own scope, and the variables it assigns are visible after the block. Two
+statements that assign the same name are an error.
+
+```agen
+parallel {
+    prices = http_get("https://example.com/prices")
+    news   = http_get("https://example.com/news")
+    sentiment = ask(analyst, "Market mood today?")
+}
+print(len(prices), len(news), sentiment)
+```
+
+**Lists in parallel.** Results keep the input order. The default is 8 workers.
+
+| function | what it does |
+|----------|--------------|
+| `pmap(fn, items, workers)` | calls `fn(item)` for every item at the same time |
+| `ask_all(agent, prompts, workers)` | `ask` for every prompt at the same time |
+| `jev_all(inputs, questions, options)` | `jev` for every input at the same time |
+
+Every task finishes before the first error (in input order) is raised. A
+`step` inside a parallel task gets a key such as `pmap0.2.load`, so a resumed
+workflow replays the branches that finished and reruns only the rest.
+
+Threads overlap waiting, not computation. Pure Agen code (loops and arithmetic)
+runs one thread at a time and gets no faster in `parallel`.
+
+### JEV typed questions
+
+JEV is the model behind [TypeSafe AI](https://docs.typesafe.ai/). Instead of
+returning text, it answers typed questions with probabilities, so a program can
+branch on confidence:
+
+| constructor | answer fields |
+|-------------|---------------|
+| `choice(instructions, {label: description, ...})` | `choice`, `confidence`, `probabilities` |
+| `score(instructions, [level0, level1, ...])` | `score` (0 = first level), `confidence`, `legend`, `probabilities` |
+| `noul(instructions)` | `noul`, the probability that the statement is true |
+
+```agen
+let questions = {
+    department: choice("Which team should handle this", {
+        billing: "Payment or subscription issues",
+        technical: "Bugs or integration problems"
+    }),
+    urgent: noul("The message conveys urgency")
+}
+let a = jev("My Stripe integration keeps failing. Please help ASAP.", questions)
+if a.urgent.noul >= 0.7 { print("page on-call: " + a.department.choice) }
+```
+
+`jev(input, questions, options)` accepts text or a map as the input. Options
+are `model` (default `jev-latest`), `timeout`, `cache`, and `workers` (for
+`jev_all`). Put calls inside a `step` so retries and replay apply. See
+`projects/jev_tickets.agn`.
+
+**Where the key goes:** put `TYPESAFE_API_KEY=...` in a `.env` file next to the
+program (for example `projects/.env`) or set it in the environment. `agen run`
+loads that `.env` automatically. `TYPESAFE_BASE_URL` and
+`TYPESAFE_DEFAULT_MODEL` are optional overrides. The key is sent only in the
+`Authorization` header and never appears in logs or journals.
+
 ## Built-in functions
 
 | area           | functions |
 |----------------|-----------|
-| core           | `print len str int float range push keys join split contains upper lower type` |
+| core           | `print len str int float round range push keys join split contains upper lower type` |
 | time / env     | `sleep now timestamp env` |
 | data / network | `json_parse json_str http_get http_post` |
-| agents         | `ask(agent, prompt)` |
+| agents         | `ask(agent, prompt)`, `ask_all(agent, prompts, workers)` |
+| parallelism    | `pmap(fn, items, workers)` |
+| JEV (TypeSafe) | `jev(input, questions, options)`, `jev_all(inputs, questions, options)`, `choice`, `score`, `noul` |
 | cloud storage  | `put(resource, key, value)`, `get(resource, key, default)` |
 | observability  | `emit(name, data)`, `alert(message)` |
 | fault testing  | `fail(msg)`, `chaos(probability)`, `flaky(name, n)` (fails the first n calls) |
@@ -247,6 +328,8 @@ step** so that its result is journaled. Steps inside loops get stable keys
 * `mock` (default): deterministic, offline. Good for tests and demos.
 * `openai`: needs `OPENAI_API_KEY`; optional `OPENAI_BASE_URL`; uses `model`.
 * `azure`: needs `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_API_KEY`; optional `AZURE_OPENAI_API_VERSION`; uses `deployment` or `model`.
+
+Set `cache = true` in an agent to reuse the answer for an identical prompt within one run.
 
 Secrets are read only from environment variables, never from source code.
 
@@ -278,19 +361,17 @@ Cursor by copying that folder to:
 %USERPROFILE%\.cursor\extensions\agen-lang.agen-0.1.0
 ```
 
-Reload the window afterwards (**Developer: Reload Window**). For VS Code, copy
-the same folder to `%USERPROFILE%\.vscode\extensions\agen-lang.agen-0.1.0`.
+Reload the window afterwards (**Developer: Reload Window**). The extension
+gives every `.agn` file its own icon in the explorer, the same way Python
+files show the Python icon. It selects the **Seti (Agen)** icon theme, which
+is the normal Seti theme plus the Agen mark. For VS Code, copy the same folder
+to `%USERPROFILE%\.vscode\extensions\agen-lang.agen-0.2.0`.
 
-Keywords use the scope `keyword.control.agen`, so the theme colors them like
-other languages' keywords. To pick a specific color, add this to `.vscode/settings.json`:
-
-```json
-"editor.tokenColorCustomizations": {
-  "textMateRules": [
-    { "scope": "keyword.control.agen", "settings": { "foreground": "#C586C0" } }
-  ]
-}
-```
+Keywords are split into colors: control flow is purple, declarations are blue,
+`and`/`or`/`not` are gold, and `workflow`, `step`, `agent`, `deploy`, and
+`parallel` are teal. Built-ins such as `print` and `ask` are yellow. Change a color in
+`.vscode/settings.json` under `editor.tokenColorCustomizations`. The scope for
+`print` is `support.function.agen`.
 
 ## Project layout
 
@@ -302,7 +383,8 @@ src/agen/
   durable.py                        journal, encoding, atomic writes
   resilience.py                     retry policy (backoff, jitter, timeouts)
   infra.py  terraform.py            plan/apply, local provider, Terraform export
-  agents.py  net.py                 LLM providers, HTTP with fault classification
+  agents.py  jev.py                 LLM providers, JEV typed questions (TypeSafe)
+  net.py                            pooled keep-alive HTTP with fault classification
   events.py                         event log and alerting
   builtins.py  cli.py
 tests/                              python -m unittest discover -s tests
@@ -310,8 +392,8 @@ tests/                              python -m unittest discover -s tests
 
 ## Roadmap ideas
 
-Real cloud providers for `deploy` (Azure SDK / Terraform runner), parallel
-steps, agent tool-calling, circuit breakers shared across runs, and a
+Real cloud providers for `deploy` (Azure SDK / Terraform runner), process
+pools for CPU-bound work, agent tool-calling, circuit breakers shared across runs, and a
 distributed journal (e.g. Cosmos DB) so workflows can resume on another machine.
 
 ## License

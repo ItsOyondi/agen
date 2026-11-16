@@ -188,3 +188,11 @@ class Deploy(Stmt):
     name: str
     options: Expr | None
     body: Block
+
+
+@dataclass
+class Parallel(Stmt):
+    """Each top-level statement of ``body`` runs concurrently in its own scope."""
+
+    options: Expr | None
+    body: Block

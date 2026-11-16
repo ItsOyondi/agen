@@ -23,7 +23,7 @@ KEYWORDS = frozenset({
     "and", "or", "not", "true", "false", "null",
     "class", "extends", "init", "self", "super",
     "workflow", "step", "fallback", "with",
-    "resource", "agent", "service", "deploy",
+    "resource", "agent", "service", "deploy", "parallel",
 })
 
 _TWO_CHAR_OPS = frozenset({"==", "!=", "<=", ">="})

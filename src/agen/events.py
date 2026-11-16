@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 from collections import Counter
 from pathlib import Path
 from typing import Any, TextIO
@@ -33,13 +34,14 @@ _TEMPLATES = {
     "resource.updated": "  updated {kind} {name}",
     "resource.deleted": "  deleted {kind} {name}",
     "resource.retrying": "  {action} {name} failed on attempt {attempt}: {error} -> retrying in {delay:.2f}s",
+    "parallel.completed": "{kind}: {tasks} task(s) on {workers} worker(s) in {duration:.2f}s",
     "runtime.fresh": "discarded {removed} saved workflow run(s)",
     "runtime.crash_simulated": "simulating a crash after step {step}; run again to resume",
     "custom": "event {name}: {data}",
     "alert": "ALERT: {message}",
 }
 
-_LOG_ONLY = frozenset({"step.started", "deploy.planned"})
+_LOG_ONLY = frozenset({"step.started", "deploy.planned", "cache.hit"})
 
 
 class EventLog:
@@ -48,18 +50,20 @@ class EventLog:
         self.quiet = quiet
         self.stream = stream or sys.stderr
         self.counts: Counter[str] = Counter()
+        self._lock = threading.RLock()
         if self.path:
             self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def emit(self, event: str, **fields: Any) -> None:
-        self.counts[event] += 1
-        if self.path:
-            record = {"ts": utc_now(), "event": event, **fields}
-            with open(self.path, "a", encoding="utf-8") as fh:
-                fh.write(json.dumps(record, default=str) + "\n")
-        if event in _LOG_ONLY or (self.quiet and event != "alert"):
-            return
-        self._write(self._format(event, fields))
+        with self._lock:
+            self.counts[event] += 1
+            if self.path:
+                record = {"ts": utc_now(), "event": event, **fields}
+                with open(self.path, "a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(record, default=str) + "\n")
+            if event in _LOG_ONLY or (self.quiet and event != "alert"):
+                return
+            self._write(self._format(event, fields))
 
     def alert(self, message: str, **fields: Any) -> None:
         """Alerts always reach the console and, if configured, a webhook (Slack/Teams/etc.)."""
@@ -84,13 +88,15 @@ class EventLog:
             f"summary: {c['step.completed'] + c['step.recovered']} step(s) ran, "
             f"{c['step.replayed']} replayed, {c['step.retrying']} retried, "
             f"{c['step.recovered']} recovered by fallback, {c['step.failed']} failed, "
-            f"{c['service.restarting']} service restart(s), {c['alert']} alert(s)"
+            f"{c['service.restarting']} service restart(s), {c['alert']} alert(s), "
+            f"{c['parallel.completed']} parallel batch(es), {c['cache.hit']} cache hit(s)"
         )
 
     def _write(self, text: str) -> None:
-        for line in text.splitlines() or [""]:
-            self.stream.write(f"[agen] {line}\n")
-        self.stream.flush()
+        with self._lock:
+            for line in text.splitlines() or [""]:
+                self.stream.write(f"[agen] {line}\n")
+            self.stream.flush()
 
     @staticmethod
     def _format(event: str, fields: dict[str, Any]) -> str:

@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -84,16 +85,20 @@ def decode(value: Any, resolve: Resolver) -> Any:
     return value
 
 
-def run_id_for(workflow: str, args: list[Any]) -> str:
-    """Deterministic run id: calling a workflow with the same arguments resumes the same run."""
-    payload = json.dumps([workflow, encode(args)], sort_keys=True, separators=(",", ":"))
+def run_id_for(workflow: str, args: list[Any], definition: str = "") -> str:
+    """Run id from the workflow name, its arguments, and a hash of the program.
+
+    The same call resumes the same run. Editing the program changes ``definition``,
+    so the next run starts fresh instead of returning a saved answer.
+    """
+    payload = json.dumps([workflow, definition, encode(args)], sort_keys=True, separators=(",", ":"))
     return f"{workflow}-{hashlib.sha256(payload.encode()).hexdigest()[:12]}"
 
 
 def atomic_write_json(path: Path, data: Any) -> None:
     """Write via temp file + rename so a crash never leaves a half-written journal."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
         fh.flush()
@@ -120,6 +125,8 @@ class RunRecord:
     def __init__(self, path: Path, data: dict[str, Any]) -> None:
         self._path = path
         self.data = data
+        # Parallel branches of one workflow share this record.
+        self._lock = threading.RLock()
 
     @property
     def run_id(self) -> str:
@@ -142,17 +149,20 @@ class RunRecord:
         return self.data.get("result")
 
     def save(self) -> None:
-        self.data["updated_at"] = utc_now()
-        atomic_write_json(self._path, self.data)
+        with self._lock:
+            self.data["updated_at"] = utc_now()
+            atomic_write_json(self._path, self.data)
 
     def record_step(self, key: str, entry: dict[str, Any]) -> None:
-        self.steps[key] = entry
-        self.save()
+        with self._lock:
+            self.steps[key] = entry
+            self.save()
 
     def set_status(self, status: str, **fields: Any) -> None:
-        self.data["status"] = status
-        self.data.update(fields)
-        self.save()
+        with self._lock:
+            self.data["status"] = status
+            self.data.update(fields)
+            self.save()
 
 
 class JournalStore:

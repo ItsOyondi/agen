@@ -258,6 +258,21 @@ class FaultToleranceTests(unittest.TestCase):
         self.assertEqual(interp.globals.vars["result"], 42)
         self.assertEqual(interp.events.counts["workflow.cached"], 1)
 
+    def test_editing_the_program_starts_a_new_run(self):
+        source = textwrap.dedent("""
+            workflow capital() {
+                step ask {
+                    answer = place
+                }
+                return answer
+            }
+            let result = capital()
+        """)
+        run_source(source.replace("place", '"Nairobi"'), self.state)
+        interp = run_source(source.replace("place", '"Lusaka"'), self.state)
+        self.assertEqual(interp.globals.vars["result"], "Lusaka")
+        self.assertEqual(interp.events.counts["workflow.cached"], 0)
+
     def test_steps_in_loops_get_stable_keys(self):
         run_source(textwrap.dedent("""
             workflow w(items) {

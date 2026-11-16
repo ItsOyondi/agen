@@ -11,17 +11,23 @@ Fault tolerance is part of the language semantics, not library code:
                 raised if it stays down.
 * ``deploy``    reconciles declared infrastructure (plan, then apply) before
                 running application logic in that environment.
+* ``parallel``  runs independent statements concurrently. ``pmap``, ``ask_all``
+                and ``jev_all`` use the same engine for lists.
 """
 
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import os
 import random
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, wait
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Callable, Iterator, Literal
 
@@ -51,8 +57,10 @@ from .values import (
     SuperView,
     Workflow,
     binary_op,
+    format_value,
     get_index,
     get_member,
+    is_int,
     is_number,
     set_index,
     set_member,
@@ -61,11 +69,29 @@ from .values import (
 )
 
 CRASH_EXIT_CODE = 75
+DEFAULT_WORKERS = 8
 _DONE = ("completed", "fallback")
 _NO_RETURN = object()
 _DECLARATIONS = (n.Let, n.FnDef, n.ClassDef, n.WorkflowDef, n.ResourceDef, n.AgentDef)
 
 Mode = Literal["run", "plan", "declare"]
+
+
+def _fingerprint(value: Any) -> Any:
+    """Structure of an AST node, ignoring line numbers."""
+    if isinstance(value, (list, tuple)):
+        return [_fingerprint(item) for item in value]
+    if isinstance(value, n.Node):
+        return [type(value).__name__, {
+            item.name: _fingerprint(getattr(value, item.name))
+            for item in fields(value) if item.name != "line"
+        }]
+    return value
+
+
+def _definition_id(program: list[n.Stmt]) -> str:
+    payload = json.dumps(_fingerprint(program), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()[:12]
 
 
 class ReturnSignal(Exception):
@@ -88,6 +114,18 @@ class _RunContext:
     run: RunRecord
     counters: dict[str, int] = field(default_factory=dict)
     in_step: bool = False
+    # Step keys inside parallel branches are prefixed (parallel0.1.fetch) so replay
+    # stays deterministic no matter which branch finishes first.
+    prefix: str = ""
+
+
+class _ThreadState(threading.local):
+    """Execution stacks are per thread so parallel branches don't share them."""
+
+    def __init__(self) -> None:
+        self.deadlines: list[float] = []
+        self.runs: list[_RunContext] = []
+        self.methods: list[tuple[Instance, Class]] = []
 
 
 class Interpreter:
@@ -103,8 +141,9 @@ class Interpreter:
         for name, builtin in make_builtins(self).items():
             self.globals.set(name, builtin)
 
-        self._deadlines: list[float] = []
-        self._runs: list[_RunContext] = []
+        self._ts = _ThreadState()
+        self._cache: dict[str, Any] = {}
+        self._cache_lock = threading.Lock()
         self._exec: dict[type, Callable[[Any, Environment], None]] = {
             n.Let: self._exec_let,
             n.Assign: self._exec_assign,
@@ -121,6 +160,7 @@ class Interpreter:
             n.AgentDef: self._exec_agent,
             n.Service: self._exec_service,
             n.Deploy: self._exec_deploy,
+            n.Parallel: self._exec_parallel,
         }
         self._eval: dict[type, Callable[[Any, Environment], Any]] = {
             n.Literal: lambda node, env: node.value,
@@ -138,7 +178,19 @@ class Interpreter:
             n.Member: lambda node, env: get_member(self.evaluate(node.target, env), node.name),
             n.Super: self._eval_super,
         }
-        self._methods: list[tuple[Instance, Class]] = []
+        self._definition = ""
+
+    @property
+    def _deadlines(self) -> list[float]:
+        return self._ts.deadlines
+
+    @property
+    def _runs(self) -> list[_RunContext]:
+        return self._ts.runs
+
+    @property
+    def _methods(self) -> list[tuple[Instance, Class]]:
+        return self._ts.methods
 
     # Entry points ------------------------------------------------------------
 
@@ -146,6 +198,7 @@ class Interpreter:
         """Execute a program. ``plan`` mode only evaluates declarations and prints deploy
         plans; ``declare`` mode only evaluates declarations."""
         mode = self.options.mode
+        self._definition = _definition_id(program)
         for stmt in program:
             if mode == "declare" and not isinstance(stmt, _DECLARATIONS):
                 continue
@@ -376,7 +429,7 @@ class Interpreter:
 
     def _call_workflow(self, wf: Workflow, args: list[Any]) -> Any:
         self._check_arity(wf, args)
-        run_id = run_id_for(wf.name, args)
+        run_id = run_id_for(wf.name, args, self._definition)
         run = self.journal.open(run_id, wf.name, args)
         info = {"workflow": wf.name, "run_id": run_id}
 
@@ -431,7 +484,7 @@ class Interpreter:
         # Steps inside loops get stable keys (fetch, fetch#1, fetch#2...) so replay is deterministic.
         occurrence = ctx.counters.get(node.name, 0)
         ctx.counters[node.name] = occurrence + 1
-        key = node.name if occurrence == 0 else f"{node.name}#{occurrence}"
+        key = ctx.prefix + (node.name if occurrence == 0 else f"{node.name}#{occurrence}")
         info = {"workflow": ctx.run.workflow, "run_id": ctx.run.run_id, "step": key}
 
         record = ctx.run.steps.get(key)
@@ -582,6 +635,99 @@ class Interpreter:
             self.exec_block(node.body, env)
         finally:
             self.current_env = previous
+
+    # Parallelism -------------------------------------------------------------
+
+    def run_parallel(self, tasks: list[Callable[[], Any]], workers: Any, kind: str) -> list[Any]:
+        """Run tasks on a thread pool and return their results in task order.
+
+        Every task runs to completion, then the first failure (in task order) is
+        raised. Threads overlap I/O such as model and HTTP calls; CPU-bound Agen
+        code still runs one thread at a time.
+        """
+        if not tasks:
+            return []
+        pool_size = min(self._workers(workers), len(tasks))
+        deadlines, runs, methods = list(self._deadlines), list(self._runs), list(self._methods)
+        base = ""
+        if runs:
+            ctx = runs[-1]
+            occurrence = ctx.counters.get(f"@{kind}", 0)
+            ctx.counters[f"@{kind}"] = occurrence + 1
+            base = f"{ctx.prefix}{kind}{occurrence}."
+
+        def run_task(index: int, task: Callable[[], Any]) -> Any:
+            state = self._ts
+            state.deadlines, state.methods, state.runs = list(deadlines), list(methods), list(runs)
+            if runs:
+                parent = runs[-1]
+                state.runs[-1] = _RunContext(parent.run, in_step=parent.in_step, prefix=f"{base}{index}.")
+            try:
+                return task()
+            except ReturnSignal:
+                raise AgenRuntimeError(f"'return' cannot leave a {kind} branch", retryable=False) from None
+
+        started = time.monotonic()
+        pool = ThreadPoolExecutor(max_workers=pool_size, thread_name_prefix=f"agen-{kind}")
+        try:
+            futures = [pool.submit(run_task, index, task) for index, task in enumerate(tasks)]
+            pending = set(futures)
+            while pending:
+                # A timed wait keeps Ctrl+C responsive on Windows.
+                _, pending = wait(pending, timeout=0.25)
+        except BaseException:
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+        pool.shutdown(wait=True)
+        for future in futures:
+            error = future.exception()
+            if error is not None:
+                raise error
+        self.events.emit("parallel.completed", kind=kind, tasks=len(tasks), workers=pool_size,
+                         duration=time.monotonic() - started)
+        return [future.result() for future in futures]
+
+    def _exec_parallel(self, node: n.Parallel, env: Environment) -> None:
+        options = self._options(node.options, env, "parallel")
+        workers = options.pop("workers", None)
+        if options:
+            raise AgenTypeError(f"unknown parallel option(s): {', '.join(options)}")
+        frames = [Environment(env) for _ in node.body]
+        tasks = [lambda stmt=stmt, frame=frame: self.execute(stmt, frame)
+                 for stmt, frame in zip(node.body, frames)]
+        self.run_parallel(tasks, workers, "parallel")
+
+        owners: dict[str, int] = {}
+        for index, frame in enumerate(frames):
+            for name in frame.vars:
+                if name in owners:
+                    raise AgenRuntimeError(f"parallel branches {owners[name] + 1} and {index + 1} "
+                                           f"both assign '{name}'", retryable=False)
+                owners[name] = index
+        for frame in frames:
+            env.vars.update(frame.vars)
+
+    @staticmethod
+    def _workers(value: Any) -> int:
+        if value is None:
+            return DEFAULT_WORKERS
+        if not is_int(value) or value < 1:
+            raise AgenTypeError(f"workers must be a positive integer, got {format_value(value)}")
+        return value
+
+    def cached(self, parts: Any, compute: Callable[[], Any]) -> Any:
+        """Memoize an expensive call (model request) for the rest of this run."""
+        key = hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()
+        with self._cache_lock:
+            hit = key in self._cache
+            value = self._cache.get(key)
+        if hit:
+            self.events.emit("cache.hit", key=key[:12])
+        else:
+            value = compute()
+            with self._cache_lock:
+                self._cache[key] = value
+        return copy.deepcopy(value)
 
     # Helpers -----------------------------------------------------------------
 
