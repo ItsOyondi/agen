@@ -1,0 +1,18 @@
+# Ask OpenAI for the capital of Kenya.
+# agen loads projects/.env before this file runs. That file supplies
+# AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_KEY for the OpenAI-compatible API.
+
+agent guide {
+    provider = "openai"
+    model = env("CHAT_MODEL", "gpt-6.1-terra")
+    instructions = "Answer geography questions in one short sentence."
+}
+
+workflow capital() {
+    step ask_model with {retries: 2, timeout: 30} {
+        answer = ask(guide, "Who is Elon Musk ")
+    }
+    return answer
+}
+
+print(capital())

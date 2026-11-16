@@ -1,0 +1,48 @@
+# Route support tickets with JEV typed questions (TypeSafe System One).
+# Needs TYPESAFE_API_KEY in projects/.env. Run: agen run projects/jev_tickets.agn
+
+let questions = {
+    department: choice("Which team should handle this", {
+        billing: "Payment or subscription issues",
+        technical: "Bugs or integration problems",
+        sales: "Pricing or account questions"
+    }),
+    frustration: score("How frustrated the customer appears", [
+        "Calm, just stating facts",
+        "Frustrated but civil",
+        "Very angry, strong language"
+    ]),
+    urgent: noul("The message conveys urgency or time-sensitivity")
+}
+
+let tickets = [
+    "My Stripe integration has failed for 3 days and I'm losing sales. Please help ASAP.",
+    "I was charged twice for my subscription this month. Can you refund one?",
+    "Do you offer a discount for annual plans with 50 seats?",
+    "The export button does nothing in Firefox. Not urgent, just letting you know."
+]
+
+workflow triage(tickets) {
+    # One request per ticket, all in flight at once. Every question is answered in that request.
+    step classify with {retries: 2, timeout: 60} {
+        answers = jev_all(tickets, questions)
+    }
+    return answers
+}
+
+let started = timestamp()
+let results = triage(tickets)
+let seconds = round(timestamp() - started, 2)
+
+for i in range(len(tickets)) {
+    let a = results[i]
+    let route = a.department.choice
+    if a.urgent.noul >= 0.7 or a.frustration.score >= 1.5 {
+        route = route + " (priority)"
+    }
+    print("ticket " + (i + 1) + ": " + route
+        + " | confidence " + round(a.department.confidence, 2)
+        + " | frustration " + round(a.frustration.score, 2)
+        + " | urgent " + round(a.urgent.noul, 2))
+}
+print("classified " + len(tickets) + " tickets in " + seconds + "s")
