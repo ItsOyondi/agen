@@ -1,0 +1,28 @@
+{
+  "name": "agen",
+  "displayName": "Agen",
+  "description": "Syntax highlighting for the Agen language (.agn)",
+  "version": "0.1.0",
+  "publisher": "agen-lang",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "agen",
+        "aliases": ["Agen", "agen"],
+        "extensions": [".agn"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "agen",
+        "scopeName": "source.agen",
+        "path": "./syntaxes/agen.tmLanguage.json"
+      }
+    ]
+  }
+}

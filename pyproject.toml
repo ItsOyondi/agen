@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agen-lang"
+version = "0.1.0"
+description = "Agen: a fault-tolerant language for agentic AI, automation and cloud deployment"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Josephat Oyondi"}]
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+agen = "agen.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

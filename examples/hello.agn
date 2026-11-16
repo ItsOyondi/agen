@@ -1,0 +1,17 @@
+# Agen basics: values, functions, loops and maps.
+
+fn greet(name) {
+    return "Hello, " + name + "!"
+}
+
+let team = ["ada", "grace", "linus"]
+for person in team {
+    print(greet(person))
+}
+
+let config = {region: "eastus", replicas: 3}
+if config.replicas > 1 {
+    print("running", config.replicas, "replicas in", config.region)
+} else {
+    print("single instance")
+}

@@ -1,0 +1,42 @@
+{
+  "scopeName": "source.agen",
+  "name": "Agen",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#number" },
+    { "include": "#constant" },
+    { "include": "#self" },
+    { "include": "#keyword" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.number-sign.agen",
+      "match": "#.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.agen",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.agen", "match": "\\\\." }
+      ]
+    },
+    "number": {
+      "name": "constant.numeric.agen",
+      "match": "\\b\\d+(?:\\.\\d+)?\\b"
+    },
+    "constant": {
+      "name": "constant.language.agen",
+      "match": "\\b(?:true|false|null)\\b"
+    },
+    "self": {
+      "name": "variable.language.agen",
+      "match": "\\b(?:self|super)\\b"
+    },
+    "keyword": {
+      "name": "keyword.control.agen",
+      "match": "\\b(?:let|fn|return|if|else|while|for|in|and|or|not|class|extends|init|workflow|step|fallback|with|resource|agent|service|deploy)\\b"
+    }
+  }
+}

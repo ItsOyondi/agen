@@ -1,0 +1,28 @@
+# An agent loop over a batch of tickets. Each ticket is classified in its own
+# step (classify, classify#1, ...), so a crash halfway through only re-runs the
+# tickets that haven't been processed yet.
+#
+#   agen run examples/agent_triage.agn --crash-after classify#1
+#   agen run examples/agent_triage.agn        # resumes at the third ticket
+
+agent triager {
+    instructions = "Classify support tickets as bug, billing or question."
+}
+
+workflow triage(tickets) {
+    results = []
+    for ticket in tickets {
+        step classify with {retries: 5, backoff: 0.05} {
+            chaos(0.3)    # ~30% of model calls fail transiently
+            push(results, {ticket: ticket, label: ask(triager, ticket)})
+        }
+    }
+    return results
+}
+
+service triage_worker with {restarts: 2} {
+    let tickets = ["App crashes on login", "Refund my last invoice", "How do I export data?"]
+    for r in triage(tickets) {
+        print(r.ticket, "->", r.label)
+    }
+}

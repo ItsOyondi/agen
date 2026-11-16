@@ -1,0 +1,68 @@
+# Infrastructure, an AI agent and durable application logic in one file.
+#
+#   agen plan   examples/report_pipeline.agn    # preview infrastructure changes
+#   agen run    examples/report_pipeline.agn    # deploy, then run the workflow
+#   agen export examples/report_pipeline.agn -o main.tf.json
+
+# --- Infrastructure ----------------------------------------------------------
+
+resource group rg {
+    location = "eastus"
+}
+
+resource storage reports {
+    resource_group_name      = rg
+    location                 = "eastus"
+    account_tier             = "Standard"
+    account_replication_type = "LRS"
+}
+
+# --- Agents ------------------------------------------------------------------
+
+agent analyst {
+    provider     = env("AGEN_LLM_PROVIDER", "mock")    # mock | openai | azure
+    model        = "gpt-4o-mini"
+    instructions = "You are a concise financial analyst."
+}
+
+# --- Application logic -------------------------------------------------------
+
+fn total(values) {
+    let sum = 0
+    for v in values {
+        sum = sum + v
+    }
+    return sum
+}
+
+workflow daily_report(day) {
+    # The market feed has an outage: its first 2 calls fail. Retries absorb it.
+    step fetch with {retries: 4, backoff: 0.1} {
+        flaky("market-feed", 2)
+        prices = [101.5, 99.2, 103.8]
+    }
+
+    # If the model provider stays down, degrade gracefully instead of crashing.
+    step analyze with {retries: 2, timeout: 30} {
+        summary = ask(analyst, "Prices for " + day + ": " + str(prices) + ", total " + str(total(prices)))
+    } fallback {
+        summary = "analysis unavailable"
+    }
+
+    step publish {
+        put(reports, day, {day: day, prices: prices, summary: summary})
+        emit("report.published", {day: day})
+    }
+
+    return summary
+}
+
+# --- Deployment --------------------------------------------------------------
+
+deploy dev {
+    service reporter with {restarts: 2} {
+        result = daily_report("2026-11-16")
+        print("report:", result)
+        print("stored:", get(reports, "2026-11-16").summary)
+    }
+}
