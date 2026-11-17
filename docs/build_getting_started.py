@@ -6,16 +6,20 @@ from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
 OUT = Path(__file__).resolve().parent / "Agen-Getting-Started.pdf"
+LOGO = Path(__file__).resolve().parent / "agen-logo.png"
+MARK = Path(__file__).resolve().parent / "agen-mark.png"
 
 
 class Guide(FPDF):
     def header(self):
         if self.page_no() == 1:
             return
+        self.image(str(MARK), x=self.l_margin, y=8, w=6.5)
+        self.set_xy(self.l_margin + 8.5, 8)
         self.set_font("Helvetica", "", 9)
         self.set_text_color(90, 98, 110)
-        self.cell(140, 7, "Agen Getting Started")
-        self.cell(0, 7, str(self.page_no()), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.cell(140, 6.5, "Agen Getting Started")
+        self.cell(0, 6.5, str(self.page_no()), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_draw_color(220, 224, 230)
         y = self.get_y()
         self.line(self.l_margin, y, self.w - self.r_margin, y)
@@ -122,19 +126,17 @@ def build():
 
     pdf.add_page()
     pdf.set_fill_color(22, 42, 74)
-    pdf.rect(0, 0, 216, 118, style="F")
-    pdf.set_y(36)
+    pdf.rect(0, 0, 216, 128, style="F")
+    pdf.image(str(LOGO), x=18, y=16, w=86)
+    pdf.set_xy(18, 64)
     pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Helvetica", "", 12)
-    pdf.cell(0, 8, "AGEN  0.1.0", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.ln(4)
-    pdf.set_font("Helvetica", "B", 32)
-    pdf.multi_cell(0, 14, "Getting started\nwith Agen")
-    pdf.ln(4)
+    pdf.set_font("Helvetica", "B", 28)
+    pdf.multi_cell(160, 12, "Getting started", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_x(18)
     pdf.set_font("Helvetica", "", 13)
     pdf.set_text_color(198, 216, 236)
-    pdf.multi_cell(0, 7, "Install Agen, write a first program, and learn the pieces\nevery new user needs.")
-    pdf.set_y(140)
+    pdf.multi_cell(170, 6.5, "Install Agen, write a first program, and learn the pieces\nevery new user needs.  Version 0.1.0.", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_y(146)
     pdf.set_text_color(33, 37, 41)
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(0, 8, "Who this is for", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
