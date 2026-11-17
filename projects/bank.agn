@@ -1,0 +1,26 @@
+class Bank {
+    init() {
+        self.initial_balance = 1000
+    }
+
+    fn deposit(amount) {
+        self.initial_balance = self.initial_balance + amount
+        return amount
+    }
+    fn withdraw(amount) {
+        #check if amount is greater than initial balance
+        if amount > self.initial_balance {
+            return "Insufficient balance"
+        }
+        self.initial_balance = self.initial_balance - amount
+        return amount
+    }
+    fn get_balance() {
+        return balance
+    }
+}
+
+bank = Bank()
+print(bank.deposit(100))
+print(bank.withdraw(500))
+print(bank.get_balance())
