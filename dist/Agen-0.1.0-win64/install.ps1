@@ -48,14 +48,41 @@ $env:Path = $scripts + ";" + $env:Path
 
 $editor = Join-Path $root "editor"
 $version = (Get-Content -LiteralPath (Join-Path $editor "package.json") -Raw | ConvertFrom-Json).version
-$destinations = @(
-    (Join-Path $env:USERPROFILE ".cursor\extensions\agen-lang.agen-$version"),
-    (Join-Path $env:USERPROFILE ".vscode\extensions\agen-lang.agen-$version")
+$targets = @(
+    @{ Root = (Join-Path $env:USERPROFILE ".cursor\extensions"); Cli = @(
+        (Join-Path $env:LOCALAPPDATA "Programs\cursor\resources\app\bin\cursor.cmd"),
+        (Join-Path $env:LOCALAPPDATA "Programs\cursor\Cursor.exe")
+    ) },
+    @{ Root = (Join-Path $env:USERPROFILE ".vscode\extensions"); Cli = @(
+        (Join-Path $env:LOCALAPPDATA "Programs\Microsoft VS Code\bin\code.cmd")
+    ) }
 )
-foreach ($dest in $destinations) {
-    New-Item -ItemType Directory -Force -Path $dest | Out-Null
-    Copy-Item -LiteralPath (Join-Path $editor "*") -Destination $dest -Recurse -Force
+if (Get-Command cursor -ErrorAction SilentlyContinue) {
+    $targets[0].Cli = @((Get-Command cursor).Source) + $targets[0].Cli
 }
+if (Get-Command code -ErrorAction SilentlyContinue) {
+    $targets[1].Cli = @((Get-Command code).Source) + $targets[1].Cli
+}
+$vsix = Get-ChildItem -LiteralPath (Join-Path $root "package") -Filter *.vsix | Select-Object -First 1
+foreach ($target in $targets) {
+    $dest = Join-Path $target.Root "agen-lang.agen-$version"
+    if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $dest | Out-Null
+    Get-ChildItem -LiteralPath $editor -Force | Copy-Item -Destination $dest -Recurse -Force
+    $cache = Join-Path $target.Root "extensions.json"
+    if (Test-Path -LiteralPath $cache) { Remove-Item -LiteralPath $cache -Force }
+    if ($vsix) {
+        foreach ($cli in $target.Cli) {
+            if (-not (Test-Path -LiteralPath $cli)) { continue }
+            try {
+                & $cli --install-extension $vsix.FullName --force
+            } catch { }
+            if ($LASTEXITCODE -eq 0) { break }
+        }
+    }
+}
+& $runtimePython (Join-Path $root "apply_editor_settings.py")
+if ($LASTEXITCODE -ne 0) { throw "Could not save the Agen icon theme and keyword colors." }
 
 Write-Output "Agen is installed."
 & (Join-Path $scripts "agen.exe") --version

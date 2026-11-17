@@ -17,6 +17,8 @@ You need 64-bit Python 3.11. Check with: python --version
 4. In Cursor or VS Code, run Developer: Reload Window.
    .agn files then use the Agen icon and keyword colors.
 
+Read Agen-Getting-Started.pdf in this folder before writing a program.
+
 agen --version
 agen run examples\hello.agn
 agen check examples\calculator.agn

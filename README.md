@@ -443,8 +443,8 @@ Keywords are split into colors. A new keyword is added to one of these groups in
 | Control flow | purple `#C586C0` | `if` `else` `while` `for` `return` |
 | Imports | red `#E06C75` | `@import` `@at` `@imported` |
 | Declarations | blue `#569CD6` | `let` `fn` `class` `extends` `init` |
-| Function names | cyan `#56B6C2` | the name in `fn greet` |
-| Class names | violet `#C792EA` | the name in `class Counter` and `extends Parent` |
+| Function names | cyan `#56B6C2` | `fn greet` and calls such as `greet(...)` or `counter.count_primes(...)` |
+| Class names | violet `#C792EA` | `class Counter`, `extends Parent`, and uses such as `PrimeCounter()` |
 | Operators | gold `#D7BA7D` | `and` `or` `not` `in` `with` |
 | Agentic | teal `#4EC9B0` | `workflow` `step` `agent` `deploy` `parallel` |
 | Built-ins | yellow `#DCDCAA` | `print` `ask` `jev` `pmap` |

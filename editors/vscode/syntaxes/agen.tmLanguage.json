@@ -14,7 +14,9 @@
     { "include": "#declaration" },
     { "include": "#operator" },
     { "include": "#agentic" },
-    { "include": "#builtin" }
+    { "include": "#builtin" },
+    { "include": "#class-ref" },
+    { "include": "#function-call" }
   ],
   "repository": {
     "import": {
@@ -80,6 +82,14 @@
     "builtin": {
       "name": "support.function.agen",
       "match": "\\b(?:print|len|str|int|float|round|range|push|keys|join|split|contains|upper|lower|type|sleep|now|timestamp|env|json_parse|json_str|http_get|http_post|ask|ask_all|pmap|jev|jev_all|choice|score|noul|keyvault|put|get|emit|alert|fail|chaos|flaky)\\b"
+    },
+    "class-ref": {
+      "name": "entity.name.class.agen",
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+    },
+    "function-call": {
+      "name": "entity.name.function.agen",
+      "match": "\\b[a-z_][A-Za-z0-9_]*\\b(?=\\s*\\()"
     }
   }
 }

@@ -8,4 +8,3 @@ print(add(2, 3))
 let counter = Counter()
 print(counter.inc())
 print(mathx.add(10, 1))
-@imported

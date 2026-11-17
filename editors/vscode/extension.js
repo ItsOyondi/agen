@@ -32,7 +32,34 @@ function showImports(document) {
   });
 }
 
+function ensureAppearance() {
+  const defaults = require("./package.json").configurationDefaults || {};
+  const rules = (defaults["editor.tokenColorCustomizations"] || {}).textMateRules || [];
+  const config = vscode.workspace.getConfiguration();
+  const updates = [];
+  if (config.get("workbench.iconTheme") !== "agen-seti") {
+    updates.push(config.update("workbench.iconTheme", "agen-seti", vscode.ConfigurationTarget.Global));
+  }
+  const colors = Object.assign({}, config.get("editor.tokenColorCustomizations") || {});
+  const existing = Array.isArray(colors.textMateRules) ? colors.textMateRules.slice() : [];
+  const seen = new Set(existing.map((rule) => String(rule.scope)));
+  let changed = false;
+  for (const rule of rules) {
+    if (!seen.has(String(rule.scope))) {
+      existing.push(rule);
+      seen.add(String(rule.scope));
+      changed = true;
+    }
+  }
+  if (changed) {
+    colors.textMateRules = existing;
+    updates.push(config.update("editor.tokenColorCustomizations", colors, vscode.ConfigurationTarget.Global));
+  }
+  return Promise.all(updates);
+}
+
 function activate(context) {
+  ensureAppearance().catch(() => {});
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
       if (event.document.languageId !== "agen") return;

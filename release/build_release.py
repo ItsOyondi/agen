@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import compileall
 import hashlib
+import json
 import shutil
 import subprocess
 import sys
@@ -185,14 +186,41 @@ def installer_script() -> str:
 
         $editor = Join-Path $root "editor"
         $version = (Get-Content -LiteralPath (Join-Path $editor "package.json") -Raw | ConvertFrom-Json).version
-        $destinations = @(
-            (Join-Path $env:USERPROFILE ".cursor\\extensions\\agen-lang.agen-$version"),
-            (Join-Path $env:USERPROFILE ".vscode\\extensions\\agen-lang.agen-$version")
+        $targets = @(
+            @{{ Root = (Join-Path $env:USERPROFILE ".cursor\\extensions"); Cli = @(
+                (Join-Path $env:LOCALAPPDATA "Programs\\cursor\\resources\\app\\bin\\cursor.cmd"),
+                (Join-Path $env:LOCALAPPDATA "Programs\\cursor\\Cursor.exe")
+            ) }},
+            @{{ Root = (Join-Path $env:USERPROFILE ".vscode\\extensions"); Cli = @(
+                (Join-Path $env:LOCALAPPDATA "Programs\\Microsoft VS Code\\bin\\code.cmd")
+            ) }}
         )
-        foreach ($dest in $destinations) {{
-            New-Item -ItemType Directory -Force -Path $dest | Out-Null
-            Copy-Item -LiteralPath (Join-Path $editor "*") -Destination $dest -Recurse -Force
+        if (Get-Command cursor -ErrorAction SilentlyContinue) {{
+            $targets[0].Cli = @((Get-Command cursor).Source) + $targets[0].Cli
         }}
+        if (Get-Command code -ErrorAction SilentlyContinue) {{
+            $targets[1].Cli = @((Get-Command code).Source) + $targets[1].Cli
+        }}
+        $vsix = Get-ChildItem -LiteralPath (Join-Path $root "package") -Filter *.vsix | Select-Object -First 1
+        foreach ($target in $targets) {{
+            $dest = Join-Path $target.Root "agen-lang.agen-$version"
+            if (Test-Path -LiteralPath $dest) {{ Remove-Item -LiteralPath $dest -Recurse -Force }}
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            Get-ChildItem -LiteralPath $editor -Force | Copy-Item -Destination $dest -Recurse -Force
+            $cache = Join-Path $target.Root "extensions.json"
+            if (Test-Path -LiteralPath $cache) {{ Remove-Item -LiteralPath $cache -Force }}
+            if ($vsix) {{
+                foreach ($cli in $target.Cli) {{
+                    if (-not (Test-Path -LiteralPath $cli)) {{ continue }}
+                    try {{
+                        & $cli --install-extension $vsix.FullName --force
+                    }} catch {{ }}
+                    if ($LASTEXITCODE -eq 0) {{ break }}
+                }}
+            }}
+        }}
+        & $runtimePython (Join-Path $root "apply_editor_settings.py")
+        if ($LASTEXITCODE -ne 0) {{ throw "Could not save the Agen icon theme and keyword colors." }}
 
         Write-Output "Agen is installed."
         & (Join-Path $scripts "agen.exe") --version
@@ -225,11 +253,57 @@ def install_text() -> str:
         4. In Cursor or VS Code, run Developer: Reload Window.
            .agn files then use the Agen icon and keyword colors.
 
+        Read Agen-Getting-Started.pdf in this folder before writing a program.
+
         agen --version
         agen run examples\\hello.agn
         agen check examples\\calculator.agn
         """
     )
+
+
+def build_vsix(editor: Path, dest_dir: Path) -> Path:
+    package = json.loads((editor / "package.json").read_text(encoding="utf-8"))
+    manifest = f"""<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
+  <Metadata>
+    <Identity Language="en-US" Id="{package["name"]}" Version="{package["version"]}" Publisher="{package["publisher"]}" />
+    <DisplayName>{package["displayName"]}</DisplayName>
+    <Description xml:space="preserve">{package["description"]}</Description>
+    <Categories>Programming Languages,Themes</Categories>
+    <Properties>
+      <Property Id="Microsoft.VisualStudio.Code.Engine" Value="^1.70.0" />
+    </Properties>
+  </Metadata>
+  <Installation>
+    <InstallationTarget Id="Microsoft.VisualStudio.Code"/>
+  </Installation>
+  <Dependencies/>
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true"/>
+  </Assets>
+</PackageManifest>
+"""
+    content_types = """<?xml version="1.0" encoding="utf-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="vsixmanifest" ContentType="text/xml"/>
+  <Default Extension="json" ContentType="application/json"/>
+  <Default Extension="js" ContentType="application/javascript"/>
+  <Default Extension="svg" ContentType="image/svg+xml"/>
+  <Default Extension="woff" ContentType="font/woff"/>
+  <Default Extension="txt" ContentType="text/plain"/>
+  <Default Extension="xml" ContentType="text/xml"/>
+</Types>
+"""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    out = dest_dir / f"agen-{package['version']}.vsix"
+    with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", content_types)
+        archive.writestr("extension.vsixmanifest", manifest)
+        for path in sorted(editor.rglob("*")):
+            if path.is_file():
+                archive.write(path, Path("extension") / path.relative_to(editor).as_posix())
+    return out
 
 
 def assemble(wheel_path: Path) -> Path:
@@ -240,12 +314,17 @@ def assemble(wheel_path: Path) -> Path:
     (stage / "package").mkdir(parents=True)
     shutil.copy2(wheel_path, stage / "package" / wheel_path.name)
     shutil.copytree(ROOT / "editors" / "vscode", stage / "editor")
+    build_vsix(stage / "editor", stage / "package")
+    shutil.copy2(ROOT / "release" / "apply_editor_settings.py", stage / "apply_editor_settings.py")
     examples = stage / "examples"
     examples.mkdir()
     for name in ("hello.agn", "calculator.agn", "use_library.agn", "native_speed.agn"):
         shutil.copy2(ROOT / "examples" / name, examples / name)
     shutil.copytree(ROOT / "examples" / "lib", examples / "lib")
     shutil.copy2(ROOT / "LICENSE", stage / "LICENSE")
+    guide = ROOT / "docs" / "Agen-Getting-Started.pdf"
+    if guide.is_file():
+        shutil.copy2(guide, stage / "Agen-Getting-Started.pdf")
     (stage / "install.ps1").write_text(installer_script(), encoding="utf-8", newline="\r\n")
     (stage / "INSTALL.txt").write_text(install_text(), encoding="utf-8", newline="\r\n")
 
@@ -265,8 +344,11 @@ def assert_package_is_closed(archive_path: Path) -> None:
     banned = [
         name
         for name in names
-        if name.endswith((".py", ".cpp", ".h", ".hpp", ".c", ".env"))
-        or name.replace("\\", "/").endswith("vault.json")
+        if not name.endswith("/apply_editor_settings.py")
+        and (
+            name.endswith((".py", ".cpp", ".h", ".hpp", ".c", ".env"))
+            or name.replace("\\", "/").endswith("vault.json")
+        )
     ]
     if banned:
         raise SystemExit("package still contains source or secrets:\n" + "\n".join(banned))
@@ -326,6 +408,11 @@ def main() -> None:
         raise SystemExit(f"unexpected wheel name: {wheel.name}")
     strip_sources(wheel)
     archive_path = assemble(wheel)
+    installer = (ROOT / "dist" / RELEASE_NAME / "install.ps1").read_text(encoding="utf-8")
+    if 'LiteralPath (Join-Path $editor "*")' in installer:
+        raise SystemExit("installer still skips the editor files")
+    if "Get-ChildItem -LiteralPath $editor" not in installer:
+        raise SystemExit("installer does not copy the editor files")
     assert_package_is_closed(archive_path)
     smoke_test(archive_path)
     print(archive_path)
