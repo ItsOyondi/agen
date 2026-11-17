@@ -13,6 +13,7 @@ class TokenType(Enum):
     STRING = "string"
     IDENT = "identifier"
     KEYWORD = "keyword"
+    AT = "directive"
     OP = "operator"
     NEWLINE = "newline"
     EOF = "end of file"
@@ -26,6 +27,7 @@ KEYWORDS = frozenset({
     "resource", "agent", "service", "deploy", "parallel",
 })
 
+_AT_WORDS = frozenset({"import", "at", "imported"})
 _TWO_CHAR_OPS = frozenset({"==", "!=", "<=", ">="})
 _ONE_CHAR_OPS = frozenset("+-*/%<>=()[]{},:.;")
 _ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\"}
@@ -97,6 +99,19 @@ def tokenize(source: str) -> list[Token]:
             word = source[start:i]
             kind = TokenType.KEYWORD if word in KEYWORDS else TokenType.IDENT
             tokens.append(Token(kind, word, line, col))
+            continue
+
+        if ch == "@":
+            i += 1
+            if i >= n or not _is_ident_start(source[i]):
+                raise LexError("expected a name after '@'", line)
+            start = i
+            while i < n and (_is_ident_start(source[i]) or _is_digit(source[i])):
+                i += 1
+            word = source[start:i]
+            if word not in _AT_WORDS:
+                raise LexError(f"unknown directive '@{word}'. Use @import, @at, or @imported", line)
+            tokens.append(Token(TokenType.AT, word, line, col))
             continue
 
         if ch == '"':

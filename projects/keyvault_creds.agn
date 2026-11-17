@@ -1,0 +1,9 @@
+# Optional. Other programs do not need the Azure CLI or this file.
+# 1. az login
+# 2. Copy vault.json.example to vault.json and set your vault name.
+# .env is still loaded. This file contacts Key Vault and prints names only.
+
+let creds = KeyVaultCreds(env("AGEN_KEYVAULT_NAME"))
+print(creds.store)
+print(join(creds.names(), ", "))
+print("loaded " + creds.load())

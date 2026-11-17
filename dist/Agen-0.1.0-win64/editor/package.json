@@ -1,0 +1,61 @@
+{
+  "name": "agen",
+  "displayName": "Agen",
+  "description": "Syntax highlighting and import lookup for the Agen language (.agn)",
+  "version": "0.3.0",
+  "main": "./extension.js",
+  "activationEvents": ["onLanguage:agen"],
+  "publisher": "agen-lang",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": ["Programming Languages", "Themes"],
+  "configurationDefaults": {
+    "workbench.iconTheme": "agen-seti",
+    "editor.tokenColorCustomizations": {
+      "textMateRules": [
+        { "scope": "keyword.control.agen", "settings": { "foreground": "#C586C0" } },
+        { "scope": "keyword.control.import.agen", "settings": { "foreground": "#E06C75" } },
+        { "scope": "keyword.declaration.agen", "settings": { "foreground": "#569CD6" } },
+        { "scope": "entity.name.function.agen", "settings": { "foreground": "#56B6C2" } },
+        { "scope": "entity.name.class.agen", "settings": { "foreground": "#C792EA" } },
+        { "scope": "keyword.operator.agen", "settings": { "foreground": "#D7BA7D" } },
+        { "scope": "keyword.other.agen", "settings": { "foreground": "#4EC9B0" } },
+        { "scope": "variable.language.agen", "settings": { "foreground": "#9CDCFE" } },
+        { "scope": "constant.language.agen", "settings": { "foreground": "#B5CEA8" } },
+        { "scope": "support.function.agen", "settings": { "foreground": "#DCDCAA" } },
+        { "scope": "string.quoted.double.agen", "settings": { "foreground": "#CE9178" } },
+        { "scope": "constant.numeric.agen", "settings": { "foreground": "#B5CEA8" } },
+        { "scope": "comment.line.number-sign.agen", "settings": { "foreground": "#6A9955" } }
+      ]
+    }
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "agen",
+        "aliases": ["Agen", "agen"],
+        "extensions": [".agn"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/agen.svg",
+          "dark": "./icons/agen.svg"
+        }
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "agen-seti",
+        "label": "Seti (Agen)",
+        "path": "./icons/agen-icon-theme.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "agen",
+        "scopeName": "source.agen",
+        "path": "./syntaxes/agen.tmLanguage.json"
+      }
+    ]
+  }
+}

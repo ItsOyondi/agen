@@ -1,7 +1,9 @@
 __pycache__/
 .env
+vault.json
 *.egg-info/
 build/
-dist/
+*.pyd
+*.so
 .agen/
 *.tf.json

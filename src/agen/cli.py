@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__
+from . import __version__, native
 from . import nodes as n
 from .dotenv import load_dotenv
 from .durable import JournalStore
@@ -28,10 +28,13 @@ def _load(path: Path) -> list[n.Stmt]:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    load_dotenv(args.file.resolve().parent / ".env")
     program = _load(args.file)
     interp = Interpreter(RuntimeOptions(state_dir=_state_dir(args), crash_after=args.crash_after,
-                                        seed=args.seed, quiet=args.quiet))
+                                        seed=args.seed, quiet=args.quiet, native=not args.no_native,
+                                        source_path=args.file.resolve()))
+    program_dir = args.file.resolve().parent
+    load_dotenv(program_dir / ".env")
+    interp.secrets.activate_file(program_dir)
     if args.fresh:
         interp.events.emit("runtime.fresh", removed=interp.journal.clear())
     try:
@@ -45,7 +48,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
     program = _load(args.file)
     state_dir = _state_dir(args)
     events = EventLog(state_dir / "events.jsonl", stream=sys.stdout)
-    Interpreter(RuntimeOptions(state_dir=state_dir, mode="plan"), events=events).run(program)
+    Interpreter(RuntimeOptions(state_dir=state_dir, mode="plan", source_path=args.file.resolve()),
+                events=events).run(program)
     if not any(isinstance(stmt, n.Deploy) for stmt in program):
         print("no deploy blocks found")
     return 0
@@ -79,7 +83,8 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_export(args: argparse.Namespace) -> int:
     program = _load(args.file)
-    interp = Interpreter(RuntimeOptions(state_dir=_state_dir(args), mode="declare"),
+    interp = Interpreter(RuntimeOptions(state_dir=_state_dir(args), mode="declare",
+                                        source_path=args.file.resolve()),
                          events=EventLog(None, quiet=True))
     interp.run(program)
     document, warnings = to_terraform(interp.infra.declared.values())
@@ -99,7 +104,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="agen",
         description="Agen: infrastructure, deployment and fault-tolerant application logic in one language.",
     )
-    parser.add_argument("--version", action="version", version=f"agen {__version__}")
+    parser.add_argument("--version", action="version",
+                        version=f"agen {__version__} (native backend: {native.status()})")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def command(name: str, help_text: str, handler) -> argparse.ArgumentParser:
@@ -115,6 +121,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--crash-after", metavar="STEP", help="simulate a process crash after STEP is checkpointed")
     run.add_argument("--seed", type=int, help="seed for chaos() and backoff jitter")
     run.add_argument("-q", "--quiet", action="store_true", help="only print program output and alerts")
+    run.add_argument("--no-native", action="store_true", help="run everything on the Python interpreter")
 
     command("plan", "show infrastructure changes without applying them", cmd_plan)
     command("check", "check a program for syntax errors", cmd_check)

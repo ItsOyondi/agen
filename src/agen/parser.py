@@ -178,12 +178,39 @@ class Parser:
         tok = self._peek()
         if tok.type is TokenType.KEYWORD and tok.value in self._keyword_statements:
             return self._keyword_statements[str(tok.value)]()
+        if tok.type is TokenType.AT:
+            return self._directive()
         expr = self._expression()
         if self._match_op("="):
             if not isinstance(expr, (n.Name, n.Index, n.Member)):
                 raise ParseError("invalid assignment target", tok.line)
             return n.Assign(expr, self._expression(), line=tok.line)
         return n.ExprStmt(expr, line=tok.line)
+
+    def _directive(self) -> n.Stmt:
+        tok = self._advance()
+        if tok.value == "imported":
+            return n.Imported(line=tok.line)
+        if tok.value == "import":
+            return n.ImportModule(self._import_spec(), line=tok.line)
+        spec = self._import_spec()
+        if not self._check(TokenType.AT, "import"):
+            raise self._error("expected @import after the library name")
+        self._advance()
+        names = [self._expect_ident("name to import")]
+        while self._match_op(","):
+            names.append(self._expect_ident("name to import"))
+        if len(names) != len(set(names)):
+            raise ParseError("repeated name in @import", tok.line)
+        return n.ImportNames(spec, names, line=tok.line)
+
+    def _import_spec(self) -> str:
+        if self._check(TokenType.STRING):
+            return str(self._advance().value)
+        parts = [self._expect_ident("library name")]
+        while self._match_op("."):
+            parts.append(self._expect_ident("library name"))
+        return ".".join(parts)
 
     def _let(self) -> n.Stmt:
         line = self._advance().line

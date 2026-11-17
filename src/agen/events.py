@@ -35,6 +35,7 @@ _TEMPLATES = {
     "resource.deleted": "  deleted {kind} {name}",
     "resource.retrying": "  {action} {name} failed on attempt {attempt}: {error} -> retrying in {delay:.2f}s",
     "parallel.completed": "{kind}: {tasks} task(s) on {workers} worker(s) in {duration:.2f}s",
+    "secret.loaded": "loaded {count} secret(s) from vault {vault}",
     "runtime.fresh": "discarded {removed} saved workflow run(s)",
     "runtime.crash_simulated": "simulating a crash after step {step}; run again to resume",
     "custom": "event {name}: {data}",

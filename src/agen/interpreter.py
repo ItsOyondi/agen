@@ -43,8 +43,13 @@ from .errors import (
     StepFailedError,
 )
 from .events import EventLog
+from .imports import install as install_loader
+from .imports import resolve_library
 from .infra import InfraManager, format_plan
+from .native import NativeBackend
+from .parser import parse
 from .resilience import RetryPolicy
+from .secrets import CLASS_SOURCE, SecretStore
 from .values import (
     Agent,
     BoundMethod,
@@ -55,6 +60,7 @@ from .values import (
     Instance,
     Resource,
     SuperView,
+    Module,
     Workflow,
     binary_op,
     format_value,
@@ -72,7 +78,8 @@ CRASH_EXIT_CODE = 75
 DEFAULT_WORKERS = 8
 _DONE = ("completed", "fallback")
 _NO_RETURN = object()
-_DECLARATIONS = (n.Let, n.FnDef, n.ClassDef, n.WorkflowDef, n.ResourceDef, n.AgentDef)
+_DECLARATIONS = (n.Let, n.FnDef, n.ClassDef, n.WorkflowDef, n.ResourceDef, n.AgentDef,
+                 n.ImportModule, n.ImportNames)
 
 Mode = Literal["run", "plan", "declare"]
 
@@ -107,6 +114,8 @@ class RuntimeOptions:
     crash_after: str | None = None
     seed: int | None = None
     quiet: bool = False
+    native: bool = True
+    source_path: Path | None = None
 
 
 @dataclass
@@ -138,8 +147,11 @@ class Interpreter:
         self.infra = InfraManager(self.state_dir, self.events)
         self.current_env = "default"
         self.globals = Environment()
+        self.secrets = SecretStore(emit=self.events.emit)
+        self.secrets.install()
         for name, builtin in make_builtins(self).items():
             self.globals.set(name, builtin)
+        self.native = NativeBackend.create(self, options.native)
 
         self._ts = _ThreadState()
         self._cache: dict[str, Any] = {}
@@ -161,6 +173,9 @@ class Interpreter:
             n.Service: self._exec_service,
             n.Deploy: self._exec_deploy,
             n.Parallel: self._exec_parallel,
+            n.ImportModule: self._exec_import_module,
+            n.ImportNames: self._exec_import_names,
+            n.Imported: self._exec_imported,
         }
         self._eval: dict[type, Callable[[Any, Environment], Any]] = {
             n.Literal: lambda node, env: node.value,
@@ -179,6 +194,14 @@ class Interpreter:
             n.Super: self._eval_super,
         }
         self._definition = ""
+        self._modules: dict[Path, Module] = {}
+        self._loading: list[Path] = []
+        self._import_log: dict[str, list[str]] = {}
+        self.run(parse(CLASS_SOURCE))
+        self.prelude = Environment()
+        for name, value in self.globals.vars.items():
+            self.prelude.set(name, value)
+        install_loader(self)
 
     @property
     def _deadlines(self) -> list[float]:
@@ -417,6 +440,11 @@ class Interpreter:
         return None
 
     def _call_function(self, fn: Function, args: list[Any]) -> Any:
+        if self.native is not None:
+            return self.native.call(fn, args, self.remaining_time(), lambda: self._interpret_function(fn, args))
+        return self._interpret_function(fn, args)
+
+    def _interpret_function(self, fn: Function, args: list[Any]) -> Any:
         self._check_arity(fn, args)
         frame = Environment(fn.closure)
         for param, arg in zip(fn.params, args):
@@ -429,7 +457,11 @@ class Interpreter:
 
     def _call_workflow(self, wf: Workflow, args: list[Any]) -> Any:
         self._check_arity(wf, args)
-        run_id = run_id_for(wf.name, args, self._definition)
+        definition = self._definition
+        if self._modules:
+            joined = definition + "".join(self._modules[path].digest for path in sorted(self._modules))
+            definition = hashlib.sha256(joined.encode()).hexdigest()[:12]
+        run_id = run_id_for(wf.name, args, definition)
         run = self.journal.open(run_id, wf.name, args)
         info = {"workflow": wf.name, "run_id": run_id}
 
@@ -635,6 +667,78 @@ class Interpreter:
             self.exec_block(node.body, env)
         finally:
             self.current_env = previous
+
+    # Libraries ----------------------------------------------------------------
+
+    def _exec_import_module(self, node: n.ImportModule, env: Environment) -> None:
+        module = self._load_module(node.spec)
+        env.set(module.name, module)
+        self._note_import(f"@import {node.spec}")
+
+    def _exec_import_names(self, node: n.ImportNames, env: Environment) -> None:
+        module = self._load_module(node.spec)
+        missing = [name for name in node.names if name not in module.bindings]
+        if missing:
+            raise AgenRuntimeError(f"library '{node.spec}' has no {', '.join(missing)}", retryable=False)
+        for name in node.names:
+            env.set(name, module.bindings[name])
+        self._note_import(f"@at {node.spec} @import {', '.join(node.names)}")
+
+    def _exec_imported(self, node: n.Imported, env: Environment) -> None:
+        lines = self._import_log.get(self._file_key(), [])
+        label = Path(self._file_key()).name if self._file_key() != "<program>" else "this file"
+        if not lines:
+            print(f"imports in {label}: none", flush=True)
+            return
+        print(f"imports in {label}:", flush=True)
+        for line in lines:
+            print(f"  {line}", flush=True)
+
+    def _note_import(self, text: str) -> None:
+        self._import_log.setdefault(self._file_key(), []).append(text)
+
+    def _file_key(self) -> str:
+        if self._loading:
+            return str(self._loading[-1])
+        if self.options.source_path:
+            return str(self.options.source_path.resolve())
+        return "<program>"
+
+    def _base_dir(self) -> Path:
+        if self._loading:
+            return self._loading[-1].parent
+        if self.options.source_path:
+            return self.options.source_path.resolve().parent
+        return Path.cwd()
+
+    def _load_module(self, spec: str) -> Module:
+        return self.module_by_path(str(resolve_library(spec, self._base_dir())))
+
+    def module_by_path(self, path: str) -> Module:
+        resolved = Path(path).resolve()
+        cached = self._modules.get(resolved)
+        if cached is not None:
+            return cached
+        if resolved in self._loading:
+            cycle = " -> ".join(item.name for item in self._loading) + " -> " + resolved.name
+            raise AgenRuntimeError(f"import cycle: {cycle}", retryable=False)
+        try:
+            source = resolved.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise AgenRuntimeError(
+                f"could not read library {resolved.name}: {exc.strerror or exc}", retryable=False) from exc
+        program = parse(source)
+        env = Environment(self.prelude)
+        self._loading.append(resolved)
+        try:
+            for stmt in program:
+                self.execute(stmt, env)
+        finally:
+            self._loading.pop()
+        bindings = {name: value for name, value in env.vars.items() if name not in self.prelude.vars}
+        module = Module(resolved.stem, str(resolved), bindings, hashlib.sha256(source.encode()).hexdigest()[:12])
+        self._modules[resolved] = module
+        return module
 
     # Parallelism -------------------------------------------------------------
 

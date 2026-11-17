@@ -196,3 +196,23 @@ class Parallel(Stmt):
 
     options: Expr | None
     body: Block
+
+
+@dataclass
+class ImportModule(Stmt):
+    """``@import library`` binds the library as a namespace."""
+
+    spec: str
+
+
+@dataclass
+class ImportNames(Stmt):
+    """``@at library @import name`` binds selected names from a library."""
+
+    spec: str
+    names: list[str]
+
+
+@dataclass
+class Imported(Stmt):
+    """``@imported`` prints the imports written in the current file."""

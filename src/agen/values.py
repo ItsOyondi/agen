@@ -141,6 +141,29 @@ class Agent(_Shared):
         return f"<agent {self.name}>"
 
 
+class Module:
+    """A loaded library. Attribute access reads the names it defines."""
+
+    def __init__(self, name: str, path: str, bindings: dict[str, Any], digest: str) -> None:
+        self.name = name
+        self.path = path
+        self.bindings = bindings
+        self.digest = digest
+
+    def __repr__(self) -> str:
+        return f"<library {self.name}>"
+
+    def __deepcopy__(self, memo: dict) -> Module:
+        return self
+
+    def member(self, name: str) -> Any:
+        if name == "name":
+            return self.name
+        if name not in self.bindings:
+            raise AgenRuntimeError(f"library '{self.name}' has no '{name}'", retryable=False)
+        return self.bindings[name]
+
+
 def is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
@@ -174,6 +197,12 @@ def type_name(value: Any) -> str:
         return "resource"
     if isinstance(value, Agent):
         return "agent"
+    if type(value).__name__ == "Secret":
+        return "secret"
+    if type(value).__name__ == "Vault":
+        return "keyvault"
+    if isinstance(value, Module):
+        return "library"
     return type(value).__name__
 
 
@@ -318,4 +347,6 @@ def get_member(target: Any, name: str) -> Any:
         if name in target.config:
             return target.config[name]
         raise AgenRuntimeError(f"agent '{target.name}' has no attribute '{name}'", retryable=False)
+    if type(target).__name__ in ("Vault", "Secret") or isinstance(target, Module):
+        return target.member(name)
     raise AgenTypeError(f"{type_name(target)} has no attributes")

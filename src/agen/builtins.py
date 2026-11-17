@@ -229,5 +229,6 @@ def make_builtins(interp: Interpreter) -> dict[str, Builtin]:
         "ask": ask, "ask_all": ask_all, "pmap": pmap, "put": put, "get": get,
         "jev": jev_, "jev_all": jev_all, "choice": choice, "score": score, "noul": noul,
         "emit": emit, "alert": alert, "fail": fail, "chaos": chaos, "flaky": flaky,
+        "keyvault": lambda name: interp.secrets.open(str(name)),
     }
     return {name: Builtin(name, fn) for name, fn in table.items()}

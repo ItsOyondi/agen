@@ -52,6 +52,14 @@ def encode(value: Any) -> Any:
     if isinstance(value, BoundMethod):
         return {"$ref": "method", "class": value.owner.name, "name": value.method.name,
                 "instance": encode(value.instance)}
+    from .secrets import Secret, Vault
+    from .values import Module
+    if isinstance(value, Secret):
+        return {"$ref": "secret", "vault": value.vault, "name": value.name}
+    if isinstance(value, Vault):
+        return {"$ref": "vault", "name": value.url}
+    if isinstance(value, Module):
+        return {"$ref": "module", "name": value.name, "path": value.path}
     raise AgenTypeError(f"cannot persist a value of type {type_name(value)}")
 
 
@@ -79,6 +87,15 @@ def decode(value: Any, resolve: Resolver) -> Any:
                 )
             method, owner = found
             return BoundMethod(decode(value["instance"], resolve), method, owner)
+        if ref == "module":
+            from .imports import active_loader
+            return active_loader().module_by_path(value["path"])
+        if ref == "secret":
+            from .secrets import active
+            return active().get(value["vault"], value["name"])
+        if ref == "vault":
+            from .secrets import active
+            return active().open(value["name"])
         if ref is not None and set(value) == {"$ref", "name"}:
             return resolve(ref, value["name"])
         return {k: decode(v, resolve) for k, v in value.items()}

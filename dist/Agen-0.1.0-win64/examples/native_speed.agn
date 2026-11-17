@@ -1,0 +1,58 @@
+# CPU-heavy pure functions run on the C++ VM automatically.
+# Compare: agen run examples/native_speed.agn
+#          agen run examples/native_speed.agn --no-native
+
+fn fib(n) {
+    if n < 2 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+fn is_prime(n) {
+    if n < 2 {
+        return false
+    }
+    let d = 2
+    while d * d <= n {
+        if n % d == 0 {
+            return false
+        }
+        d = d + 1
+    }
+    return true
+}
+
+fn count_primes(limit) {
+    let count = 0
+    for i in range(limit) {
+        if is_prime(i) {
+            count = count + 1
+        }
+    }
+    return count
+}
+
+fn collatz_steps(n) {
+    let steps = 0
+    while n != 1 {
+        if n % 2 == 0 {
+            n = n / 2
+        } else {
+            n = 3 * n + 1
+        }
+        steps = steps + 1
+    }
+    return steps
+}
+
+let started = timestamp()
+print("fib(24) = " + fib(24))
+print("primes below 200000 = " + count_primes(200000))
+print("collatz steps for 837799 = " + collatz_steps(837799))
+print("sequential: " + round(timestamp() - started, 3) + "s")
+
+# pmap over a native function uses several CPU cores (the VM releases the GIL).
+started = timestamp()
+let counts = pmap(count_primes, [150000, 150000, 150000, 150000])
+print("4 x count_primes(150000) in parallel = " + counts + " in " + round(timestamp() - started, 3) + "s")

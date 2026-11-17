@@ -19,6 +19,7 @@ Agen they are part of the language:
 | separate Terraform / pipeline files      | `resource` + `deploy` in the same program                  |
 | thread pools, futures, connection pools  | `parallel { ... }`, `pmap`, `ask_all`, `jev_all`           |
 | an SDK per model provider                | `jev(text, questions)` for typed answers from TypeSafe JEV |
+| rewriting hot loops in C or Cython       | pure functions run on a built-in C++ VM automatically      |
 
 ## Requirements for a first program
 
@@ -26,26 +27,22 @@ You can write and run Agen with only Python. A cloud account, an API key, and ex
 
 | Requirement | What you need |
 |-------------|----------------|
-| Python | 3.10 or newer. Check with `python --version`. |
-| Agen itself | This folder. It has no third-party dependencies. |
-| An editor | Any text editor. Save programs with the `.agn` extension. |
+| Python | 3.11, 64-bit, the same version the install package was built for. Check with `python --version`. |
+| Agen itself | The Agen install package (`dist/Agen-0.1.0-win64.zip`). It has no third-party dependencies. |
+| An editor | Cursor or VS Code. The installer sets up `.agn` icons and colors. Any editor can still open the files. |
 | Optional | An OpenAI or Azure OpenAI key, only if an `agent` sets `provider` to `"openai"` or `"azure"`. The default `"mock"` provider works offline. |
 | Optional | A TypeSafe key (`TYPESAFE_API_KEY`), only if the program calls `jev` or `jev_all`. |
+| Optional | Azure CLI (`az login`) and a Key Vault, only if the program uses `KeyVaultCreds` instead of a `.env` file. |
+| Optional | Nothing extra for the fast backend. It is already compiled into the install package. |
 
-Install the `agen` command once, from this folder:
-
-```powershell
-cd agen
-pip install -e .
-agen --version
-```
-
-If `python` is not on your PATH, use the project virtual environment from the workspace root instead:
+Install Agen from the package, not from the source tree. Download `dist/Agen-0.1.0-win64.zip`, unzip it, and run:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e agen
-.\.venv\Scripts\python.exe -m agen --version
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+agen --version      # agen 0.1.0 (native backend: on (C++ VM))
 ```
+
+The installer puts `agen` on your user PATH and installs the editor support for Cursor and VS Code. Reload the editor afterwards (**Developer: Reload Window**). Build that zip from a checkout with `python release/build_release.py`. The zip contains the compiled program and the editor extension. It does not contain the Python or C++ source.
 
 Create a file such as `hello.agn`:
 
@@ -83,11 +80,9 @@ Copy `examples/hello.agn` for the basics, `examples/calculator.agn` for classes,
 No dependencies, Python 3.10+.
 
 ```powershell
-cd agen
-pip install -e .            # installs the `agen` command (or use: $env:PYTHONPATH="src"; python -m agen ...)
-
 agen run    examples/hello.agn
 agen run    examples/calculator.agn              # classes, methods, inheritance
+agen run    examples/use_library.agn             # @at library @import names
 agen plan   examples/report_pipeline.agn     # preview infrastructure changes
 agen run    examples/report_pipeline.agn     # deploy, then run the workflow
 agen status examples/report_pipeline.agn     # checkpoints and deployed environments
@@ -156,6 +151,21 @@ print(m.name, m["tags"][0])
 * Operators: `+ - * / %`, `== != < <= > >=`, `and or not`. `string + anything` concatenates.
 * Scoping: assignment binds in the current function/workflow scope; reads see enclosing scopes.
 * Statements are separated by newlines or `;`.
+
+### Libraries
+
+Other developers extend Agen with `.agn` libraries. Import them with `@`, not with Python's `from ... import ...`.
+
+```agen
+@import mathx                         # the whole library, used as mathx.add
+@at mathx @import add, Counter        # selected functions and classes
+@at "lib/mathx" @import add           # a path, in quotes
+@imported                             # list the imports written in this file
+```
+
+A library is an `.agn` file. `mathx` resolves to `mathx.agn` beside the program, then `lib/mathx.agn`, then each directory in `AGEN_LIB`. `lib.mathx` is the same file as `lib/mathx`. Names cannot contain `..`.
+
+Typing `@imported` in the editor opens a popup of every `@import` and `@at ... @import` in that file. Running it prints the same list. Hover `@imported` to see the list without running. See `examples/use_library.agn`.
 
 ### Classes
 
@@ -269,8 +279,49 @@ Every task finishes before the first error (in input order) is raised. A
 `step` inside a parallel task gets a key such as `pmap0.2.load`, so a resumed
 workflow replays the branches that finished and reruns only the rest.
 
-Threads overlap waiting, not computation. Pure Agen code (loops and arithmetic)
-runs one thread at a time and gets no faster in `parallel`.
+Threads always overlap waiting. Computation runs in parallel only for
+functions on the C++ backend (below). Other Agen code runs one thread at a
+time.
+
+### C++ backend
+
+Pure functions run on a built-in bytecode virtual machine. The install package already includes it, so a program does not change to use it. A function is compiled the
+first time it is called if it only uses:
+
+* numbers, strings, booleans, `null`, and lists
+* `let`, assignment, `if`, `while`, `for`, and `return`
+* `len`, `range`, `int`, `float`, `str`, `round`, and other functions that qualify
+
+Anything else stays on the Python interpreter: maps, classes, agents,
+`print`, I/O, steps, and global variables. A common pattern is to keep
+workflows and agents in Agen's normal code and move the number crunching into
+small pure functions.
+
+Results are identical to the Python interpreter. The VM never guesses at
+Python behavior. On an error, a 64-bit integer overflow (`factorial(30)`), or
+a value it can't format exactly (a float turned into text), it stops, and the
+interpreter reruns that call. A rerun is safe because these functions have no
+side effects. The tests run every program on both backends and compare the results.
+
+The VM releases Python's global interpreter lock (GIL) while it runs, so
+`pmap(fn, items)` over a pure function uses several CPU cores. Python threads
+can't do this.
+
+Measured with `python benchmarks/compare.py` (best of 7, 12-core Windows laptop):
+
+| workload | CPython 3.11 | Agen with C++ | Agen on Python |
+|----------|-------------:|--------------:|---------------:|
+| `fib(27)` | 0.032s | 0.021s (1.5x faster) | 16.5s |
+| `count_primes(200000)` | 0.406s | 0.288s (1.4x faster) | 182.7s |
+| `sum_squares(3000000)` | 0.208s | 0.097s (2.2x faster) | 57.8s |
+| string building, 200000 appends | 0.016s | 0.003s (5x faster) | 0.97s |
+| 4 x `count_primes(150000)` on 4 threads | 1.059s | 0.278s (3.8x faster) | |
+
+Timings vary with machine load. Run the script to measure your own machine.
+`examples/native_speed.agn` shows the same workloads as a program.
+
+To turn the backend off, use `agen run --no-native` or set `AGEN_NATIVE=0`.
+`agen --version` shows whether it is active.
 
 ### JEV typed questions
 
@@ -320,6 +371,7 @@ loads that `.env` automatically. `TYPESAFE_BASE_URL` and
 | cloud storage  | `put(resource, key, value)`, `get(resource, key, default)` |
 | observability  | `emit(name, data)`, `alert(message)` |
 | fault testing  | `fail(msg)`, `chaos(probability)`, `flaky(name, n)` (fails the first n calls) |
+| secrets        | `keyvault(name)`, class `KeyVaultCreds` |
 
 ## Agents and providers
 
@@ -331,7 +383,36 @@ loads that `.env` automatically. `TYPESAFE_BASE_URL` and
 
 Set `cache = true` in an agent to reuse the answer for an identical prompt within one run.
 
-Secrets are read only from environment variables, never from source code.
+Secrets are never written in a program. `.env` is always loaded. Key Vault is optional; see [Secret store](#secret-store).
+
+## Secret store
+
+`KeyVaultCreds` is optional. A program that never calls it does not need the Azure CLI, and `agen run` still loads `.env`. Azure is contacted only by `get`, `names`, `creds`, and `load`. Secret values stay in memory for that run: `print` shows `secret("NAME")`, and a workflow journal stores the name so a resume fetches the secret again instead of keeping a copy.
+
+```agen
+let creds = KeyVaultCreds("my-agen-vault")
+let key = creds.get("AZURE-OPENAI-KEY")   # prints as secret("AZURE-OPENAI-KEY")
+print(creds.creds())                        # names only
+creds.load()                                # installs them for ask() and jev()
+```
+
+`AZURE-OPENAI-KEY` is also installed as `AZURE_OPENAI_KEY`, which is the name the OpenAI and TypeSafe providers already use. A name with underscores is tried, then the same name with hyphens, because Key Vault names cannot contain `_`.
+
+To use this for a project, sign in once with `az login`, then put the vault name beside the program:
+
+```json
+{ "vault": "my-agen-vault" }
+```
+
+Save that as `vault.json` (it is gitignored). It only stores the vault name, so `KeyVaultCreds(env("AGEN_KEYVAULT_NAME"))` can find it. Copy `projects/vault.json.example` and see `projects/keyvault_creds.agn`. Call `creds.load()` in the program that needs the secrets.
+
+The access token from `az account get-access-token` is sent only to `https://<vault>.vault.azure.net`. Store a secret without putting the value in the command history:
+
+```powershell
+az keyvault secret set --vault-name my-agen-vault --name AZURE-OPENAI-KEY --file .\openai.key
+```
+
+Do not `print(env("AZURE_OPENAI_KEY"))` after `load()`. That reads the raw string back out of the environment.
 
 ## Monitoring
 
@@ -353,25 +434,22 @@ Secrets are read only from environment variables, never from source code.
 
 ## Syntax highlighting
 
-Editors color keywords only when they have a grammar for the file type. This
-repo includes one for `.agn` files at `editors/vscode`. It is installed for
-Cursor by copying that folder to:
+The installer adds Agen syntax, the Agen file icon, and the Seti (Agen) icon theme to Cursor and VS Code. Reload the window afterwards (**Developer: Reload Window**).
 
-```
-%USERPROFILE%\.cursor\extensions\agen-lang.agen-0.1.0
-```
+Keywords are split into colors. A new keyword is added to one of these groups in `editors/vscode/syntaxes/agen.tmLanguage.json`. The color is set in `.vscode/settings.json` and in the extension's `configurationDefaults`, so an installed copy has the same colors:
 
-Reload the window afterwards (**Developer: Reload Window**). The extension
-gives every `.agn` file its own icon in the explorer, the same way Python
-files show the Python icon. It selects the **Seti (Agen)** icon theme, which
-is the normal Seti theme plus the Agen mark. For VS Code, copy the same folder
-to `%USERPROFILE%\.vscode\extensions\agen-lang.agen-0.2.0`.
+| Group | Color | Examples |
+|-------|-------|----------|
+| Control flow | purple `#C586C0` | `if` `else` `while` `for` `return` |
+| Imports | red `#E06C75` | `@import` `@at` `@imported` |
+| Declarations | blue `#569CD6` | `let` `fn` `class` `extends` `init` |
+| Function names | cyan `#56B6C2` | the name in `fn greet` |
+| Class names | violet `#C792EA` | the name in `class Counter` and `extends Parent` |
+| Operators | gold `#D7BA7D` | `and` `or` `not` `in` `with` |
+| Agentic | teal `#4EC9B0` | `workflow` `step` `agent` `deploy` `parallel` |
+| Built-ins | yellow `#DCDCAA` | `print` `ask` `jev` `pmap` |
 
-Keywords are split into colors: control flow is purple, declarations are blue,
-`and`/`or`/`not` are gold, and `workflow`, `step`, `agent`, `deploy`, and
-`parallel` are teal. Built-ins such as `print` and `ask` are yellow. Change a color in
-`.vscode/settings.json` under `editor.tokenColorCustomizations`. The scope for
-`print` is `support.function.agen`.
+`self` and `super` are light blue. `true`, `false`, `null`, and numbers are green. Strings are orange. Comments are muted green. The scope for `print` is `support.function.agen`. The scope for `@import` is `keyword.control.import.agen`. A defined function name is `entity.name.function.agen`. A defined class name is `entity.name.class.agen`.
 
 ## Project layout
 
@@ -385,6 +463,11 @@ src/agen/
   infra.py  terraform.py            plan/apply, local provider, Terraform export
   agents.py  jev.py                 LLM providers, JEV typed questions (TypeSafe)
   net.py                            pooled keep-alive HTTP with fault classification
+  imports.py                        @import and @at library resolution
+  secrets.py                        Azure Key Vault secret store (values stay out of journals)
+  native.py                         compiles pure functions to bytecode for the C++ VM
+native/vm.cpp                       C++ bytecode VM (built as agen._native)
+benchmarks/compare.py               CPython vs Agen timings
   events.py                         event log and alerting
   builtins.py  cli.py
 tests/                              python -m unittest discover -s tests
@@ -392,8 +475,8 @@ tests/                              python -m unittest discover -s tests
 
 ## Roadmap ideas
 
-Real cloud providers for `deploy` (Azure SDK / Terraform runner), process
-pools for CPU-bound work, agent tool-calling, circuit breakers shared across runs, and a
+Real cloud providers for `deploy` (Azure SDK / Terraform runner), maps and
+classes on the C++ backend, agent tool-calling, circuit breakers shared across runs, and a
 distributed journal (e.g. Cosmos DB) so workflows can resume on another machine.
 
 ## License

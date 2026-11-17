@@ -1,0 +1,16 @@
+# Add two numbers with a class.
+#   agen run examples/calculator.agn
+
+class Calculator {
+    init(a, b) {
+        self.a = a
+        self.b = b
+    }
+
+    fn add() {
+        return self.a + self.b
+    }
+}
+
+let calc = Calculator(2, 3)
+print(calc.a + " + " + calc.b + " = " + calc.add())

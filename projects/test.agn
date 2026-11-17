@@ -2,17 +2,33 @@
 # agen loads projects/.env before this file runs. That file supplies
 # AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_KEY for the OpenAI-compatible API.
 
-agent guide {
-    provider = "openai"
-    model = env("CHAT_MODEL", "gpt-6.1-terra")
-    instructions = "Answer geography questions in one short sentence."
-}
+# agent guide {
+#     provider = "openai"
+#     model = env("CHAT_MODEL", "gpt-6.1-terra")
+#     instructions = "Answer geography questions in one short sentence."
+# }
 
-workflow capital() {
-    step ask_model with {retries: 2, timeout: 30} {
-        answer = ask(guide, "Who is Elon Musk ")
+# workflow capital() {
+#     step ask_model with {retries: 2, timeout: 30} {
+#         answer = ask(guide, "Who is Elon Musk ")
+#     }
+#     return answer
+# }
+
+# print(capital())
+class PrimeCounter {
+    fn count_primes(limit) {
+        count = 0
+        for i in range(limit) {
+            if i % 2 != 0 { count = count + 1 }
+        }
+        return count
     }
-    return answer
+    fn count_primes_parallel(limits) {    
+        return pmap(self.count_primes, limits)
+    }
 }
 
-print(capital())
+let counter = PrimeCounter()
+print(counter.count_primes_parallel([100000, 100000, 100000, 100000]))  # several cores
+print(counter.count_primes(200000))          # this function runs in C++

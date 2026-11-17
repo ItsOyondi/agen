@@ -1,0 +1,85 @@
+{
+  "scopeName": "source.agen",
+  "name": "Agen",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#import" },
+    { "include": "#string" },
+    { "include": "#number" },
+    { "include": "#constant" },
+    { "include": "#self" },
+    { "include": "#function-name" },
+    { "include": "#class-name" },
+    { "include": "#control" },
+    { "include": "#declaration" },
+    { "include": "#operator" },
+    { "include": "#agentic" },
+    { "include": "#builtin" }
+  ],
+  "repository": {
+    "import": {
+      "name": "keyword.control.import.agen",
+      "match": "@(?:import|at|imported)\\b"
+    },
+    "comment": {
+      "name": "comment.line.number-sign.agen",
+      "match": "#.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.agen",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.agen", "match": "\\\\." }
+      ]
+    },
+    "number": {
+      "name": "constant.numeric.agen",
+      "match": "\\b\\d+(?:\\.\\d+)?\\b"
+    },
+    "constant": {
+      "name": "constant.language.agen",
+      "match": "\\b(?:true|false|null)\\b"
+    },
+    "self": {
+      "name": "variable.language.agen",
+      "match": "\\b(?:self|super)\\b"
+    },
+    "control": {
+      "name": "keyword.control.agen",
+      "match": "\\b(?:if|else|while|for|return)\\b"
+    },
+    "function-name": {
+      "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.declaration.agen" },
+        "2": { "name": "entity.name.function.agen" }
+      }
+    },
+    "class-name": {
+      "match": "\\b(class)\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(extends)\\s+([A-Za-z_][A-Za-z0-9_]*))?",
+      "captures": {
+        "1": { "name": "keyword.declaration.agen" },
+        "2": { "name": "entity.name.class.agen" },
+        "3": { "name": "keyword.declaration.agen" },
+        "4": { "name": "entity.name.class.agen" }
+      }
+    },
+    "declaration": {
+      "name": "keyword.declaration.agen",
+      "match": "\\b(?:let|fn|class|extends|init)\\b"
+    },
+    "operator": {
+      "name": "keyword.operator.agen",
+      "match": "\\b(?:and|or|not|in|with)\\b"
+    },
+    "agentic": {
+      "name": "keyword.other.agen",
+      "match": "\\b(?:workflow|step|fallback|resource|agent|service|deploy|parallel)\\b"
+    },
+    "builtin": {
+      "name": "support.function.agen",
+      "match": "\\b(?:print|len|str|int|float|round|range|push|keys|join|split|contains|upper|lower|type|sleep|now|timestamp|env|json_parse|json_str|http_get|http_post|ask|ask_all|pmap|jev|jev_all|choice|score|noul|keyvault|put|get|emit|alert|fail|chaos|flaky)\\b"
+    }
+  }
+}

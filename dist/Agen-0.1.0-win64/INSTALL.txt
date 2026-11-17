@@ -1,0 +1,22 @@
+Agen 0.1.0
+
+This package installs Agen and its editor support. It does not include
+the program source.
+
+You need 64-bit Python 3.11. Check with: python --version
+
+1. Unzip this folder.
+2. In the folder, run:
+
+   powershell -ExecutionPolicy Bypass -File .\install.ps1
+
+3. Open a new terminal and run:
+
+   agen run examples\hello.agn
+
+4. In Cursor or VS Code, run Developer: Reload Window.
+   .agn files then use the Agen icon and keyword colors.
+
+agen --version
+agen run examples\hello.agn
+agen check examples\calculator.agn
