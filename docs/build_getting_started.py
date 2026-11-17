@@ -136,6 +136,8 @@ def build():
     pdf.set_font("Helvetica", "", 13)
     pdf.set_text_color(198, 216, 236)
     pdf.multi_cell(170, 6.5, "Install Agen, write a first program, and learn the pieces\nevery new user needs.  Version 0.1.0.", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_x(18)
+    pdf.multi_cell(170, 6.5, "You write what the workflow should do. Agen keeps it running.", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_y(146)
     pdf.set_text_color(33, 37, 41)
     pdf.set_font("Helvetica", "B", 12)
@@ -157,8 +159,21 @@ def build():
 
     pdf.add_page()
     pdf.h1("1. What Agen is")
-    pdf.body("Agen is a language for agentic AI, automation, and cloud deployment. Application logic, retries, checkpoints, and infrastructure live in the same .agn file. You do not write the retry loop, the checkpoint file, or a separate deployment script by hand.")
-    pdf.body("A plain program can be a function and a print. A production program adds a workflow so a crash does not throw away finished work, a step so a flaky call is retried, and a deploy block so the resources that program needs are created first.")
+    pdf.body("Agen is a language for agentic AI, automation, and cloud deployment. The program, the retries, the saved progress, and the infrastructure live in one .agn file.")
+    pdf.h2("The problem")
+    pdf.body("A workflow that calls a model, an API, and a cloud service is not finished when the happy path works. The same run has to survive a timeout, a rate limit, and a process that dies halfway through. A restart must not repeat a charge, resend an email, or call the model again for a step that already succeeded.")
+    pdf.body("Developers usually write that protection by hand: retry loops, backoff, checkpoint files, process supervisors, alerts, and a separate deployment project. That code is often larger than the business logic. A mistake in it stays quiet until production, which is the worst time to discover that a finished step ran twice.")
+    pdf.h2("The objective")
+    pdf.body("Agen's objective is to make that reliability part of the language. You describe the work. The runtime retries what can heal on its own, remembers what already finished, restarts what crashed, and raises an alert when it cannot recover. The resources the program needs are declared beside the code that uses them, so you read one file instead of an application, a pipeline, and a Terraform project.")
+    pdf.bullet("A step retries transient failures, such as network errors, HTTP 429 and 5xx, and timeouts. A fallback block runs if every retry fails.")
+    pdf.bullet("A workflow saves each finished step. Run the same file after a crash and it resumes. Finished work is not repeated.")
+    pdf.bullet("A service restarts a crashed process. Because the workflow is durable, the restart continues from the last finished step.")
+    pdf.bullet("resource and deploy create what the program needs, then run the program in that environment. A local deploy works with no cloud account.")
+    pdf.bullet("Secrets stay out of the source. The program names a key. It does not embed the value, and print does not reveal it.")
+    pdf.h2("The long-term goal")
+    pdf.body("The long-term goal is that Agen is the language developers choose when an agent or an automation has to keep running. Shipping that kind of program should mean writing the workflow, not assembling retries, journals, supervisors, and deployment from a stack of libraries.")
+    pdf.body("Speed is part of the same goal. Reliability should not force the program to be slow. Independent model and HTTP calls run at the same time. Pure computation runs on the built-in fast engine. You do not rewrite the hot path in another language to get either property.")
+    pdf.body("A plain program can still be a function and a print. You add a workflow when a crash must not throw work away, a step when a call may fail and should be tried again, and a deploy block when the program needs infrastructure before it runs.")
     pdf.table(
         ["You would otherwise write", "Agen already does"],
         [

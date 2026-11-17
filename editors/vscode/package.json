@@ -26,7 +26,10 @@
         { "scope": "support.function.agen", "settings": { "foreground": "#DCDCAA" } },
         { "scope": "string.quoted.double.agen", "settings": { "foreground": "#CE9178" } },
         { "scope": "constant.numeric.agen", "settings": { "foreground": "#B5CEA8" } },
-        { "scope": "comment.line.number-sign.agen", "settings": { "foreground": "#6A9955" } }
+        { "scope": "invalid.illegal.import.agen", "settings": { "foreground": "#F44747", "fontStyle": "underline" } },
+        { "scope": "comment.line.number-sign.agen", "settings": { "foreground": "#6A9955" } },
+        { "scope": "comment.block.agen", "settings": { "foreground": "#6A9955" } },
+        { "scope": "comment.block.documentation.agen", "settings": { "foreground": "#6A9955" } }
       ]
     }
   },

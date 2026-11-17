@@ -1,3 +1,7 @@
+"""
+A bank account you can deposit to and withdraw from.
+"""
+
 class Bank {
     init() {
         self.initial_balance = 1000
@@ -8,7 +12,7 @@ class Bank {
         return amount
     }
     fn withdraw(amount) {
-        #check if amount is greater than initial balance
+        # amount cannot be larger than the balance
         if amount > self.initial_balance {
             return "Insufficient balance"
         }
@@ -16,7 +20,7 @@ class Bank {
         return amount
     }
     fn get_balance() {
-        return balance
+        return self.initial_balance
     }
 }
 

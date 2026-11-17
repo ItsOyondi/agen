@@ -180,6 +180,12 @@ class Parser:
             return self._keyword_statements[str(tok.value)]()
         if tok.type is TokenType.AT:
             return self._directive()
+        if tok.type is TokenType.IDENT and tok.value in ("from", "import"):
+            raise ParseError(
+                "Python import is not valid. Use @import library, or @at library @import name. "
+                "print is already built in",
+                tok.line,
+            )
         expr = self._expression()
         if self._match_op("="):
             if not isinstance(expr, (n.Name, n.Index, n.Member)):

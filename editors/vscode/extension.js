@@ -58,9 +58,47 @@ function ensureAppearance() {
   return Promise.all(updates);
 }
 
+function pythonImportRanges(line) {
+  const code = line.replace(/#.*$/, "");
+  const found = [];
+  const fromImport = /\bfrom\s+\S+\s+import\b/g;
+  const bareImport = /(?<!@)\bimport\s+[A-Za-z_]\w*/g;
+  let match;
+  while ((match = fromImport.exec(code))) found.push(match);
+  if (!found.length) {
+    while ((match = bareImport.exec(code))) found.push(match);
+  }
+  return found;
+}
+
+function scanDocument(document) {
+  if (document.languageId !== "agen") return;
+  const diagnostics = [];
+  for (let i = 0; i < document.lineCount; i++) {
+    const raw = document.lineAt(i).text;
+    for (const match of pythonImportRanges(raw)) {
+      const start = match.index;
+      diagnostics.push(new vscode.Diagnostic(
+        new vscode.Range(i, start, i, start + match[0].length),
+        "Python import is not valid in Agen. print is built in. Use @import library, or @at library @import name.",
+        vscode.DiagnosticSeverity.Error
+      ));
+    }
+  }
+  problems.set(document.uri, diagnostics);
+}
+
+const problems = vscode.languages.createDiagnosticCollection("agen");
+
 function activate(context) {
   ensureAppearance().catch(() => {});
+  const watch = (document) => scanDocument(document);
+  if (vscode.window.activeTextEditor) watch(vscode.window.activeTextEditor.document);
   context.subscriptions.push(
+    problems,
+    vscode.workspace.onDidOpenTextDocument(watch),
+    vscode.workspace.onDidChangeTextDocument((event) => watch(event.document)),
+    vscode.workspace.onDidCloseTextDocument((document) => problems.delete(document.uri)),
     vscode.workspace.onDidChangeTextDocument((event) => {
       if (event.document.languageId !== "agen") return;
       for (const change of event.contentChanges) {

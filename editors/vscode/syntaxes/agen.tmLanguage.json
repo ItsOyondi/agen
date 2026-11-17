@@ -3,6 +3,9 @@
   "name": "Agen",
   "patterns": [
     { "include": "#comment" },
+    { "include": "#block-comment" },
+    { "include": "#doc-comment" },
+    { "include": "#illegal-import" },
     { "include": "#import" },
     { "include": "#string" },
     { "include": "#number" },
@@ -19,6 +22,20 @@
     { "include": "#function-call" }
   ],
   "repository": {
+    "illegal-import": {
+      "name": "invalid.illegal.import.agen",
+      "match": "(?m)^\\s*from\\s+\\S+\\s+import\\b|(?<!@)\\bimport\\s+[A-Za-z_]\\w*"
+    },
+    "block-comment": {
+      "name": "comment.block.agen",
+      "begin": "/\\*",
+      "end": "\\*/"
+    },
+    "doc-comment": {
+      "name": "comment.block.documentation.agen",
+      "begin": "\"\"\"",
+      "end": "\"\"\""
+    },
     "import": {
       "name": "keyword.control.import.agen",
       "match": "@(?:import|at|imported)\\b"

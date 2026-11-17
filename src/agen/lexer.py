@@ -49,6 +49,16 @@ def _is_ident_start(ch: str) -> bool:
     return ch == "_" or ("a" <= ch <= "z") or ("A" <= ch <= "Z")
 
 
+def _skip_span(source: str, start: int, end: int, line: int, line_start: int) -> tuple[int, int, int]:
+    """Move past source[start:end], keeping the line counter in step."""
+    chunk = source[start:end]
+    breaks = chunk.count("\n")
+    if breaks:
+        line += breaks
+        line_start = start + chunk.rfind("\n") + 1
+    return end, line, line_start
+
+
 def tokenize(source: str) -> list[Token]:
     """Convert source text into tokens.
 
@@ -76,6 +86,12 @@ def tokenize(source: str) -> list[Token]:
         if ch == "#":
             while i < n and source[i] != "\n":
                 i += 1
+            continue
+        if source.startswith("/*", i):
+            end = source.find("*/", i + 2)
+            if end < 0:
+                raise LexError("unterminated block comment", line)
+            i, line, line_start = _skip_span(source, i, end + 2, line, line_start)
             continue
 
         if _is_digit(ch):
@@ -115,6 +131,12 @@ def tokenize(source: str) -> list[Token]:
             continue
 
         if ch == '"':
+            if source.startswith('"""', i):
+                end = source.find('"""', i + 3)
+                if end < 0:
+                    raise LexError("unterminated triple-quoted comment", line)
+                i, line, line_start = _skip_span(source, i, end + 3, line, line_start)
+                continue
             i += 1
             chars: list[str] = []
             while True:

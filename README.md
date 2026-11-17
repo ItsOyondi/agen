@@ -21,8 +21,6 @@ Agen they are part of the language:
 | an SDK per model provider                | `jev(text, questions)` for typed answers from TypeSafe JEV |
 | rewriting hot loops in C or Cython       | pure functions run on a built-in C++ VM automatically      |
 
-## Install
-powershell -ExecutionPolicy Bypass -File .\install.ps1
 ## Requirements for a first program
 
 You can write and run Agen with only Python. A cloud account, an API key, and extra packages are not required for the examples.
@@ -450,8 +448,9 @@ Keywords are split into colors. A new keyword is added to one of these groups in
 | Operators | gold `#D7BA7D` | `and` `or` `not` `in` `with` |
 | Agentic | teal `#4EC9B0` | `workflow` `step` `agent` `deploy` `parallel` |
 | Built-ins | yellow `#DCDCAA` | `print` `ask` `jev` `pmap` |
+| Invalid Python | red underline `#F44747` | `from x import y`, `import x` |
 
-`self` and `super` are light blue. `true`, `false`, `null`, and numbers are green. Strings are orange. Comments are muted green. The scope for `print` is `support.function.agen`. The scope for `@import` is `keyword.control.import.agen`. A defined function name is `entity.name.function.agen`. A defined class name is `entity.name.class.agen`.
+`self` and `super` are light blue. `true`, `false`, `null`, and numbers are green. Strings are orange. Comments are muted green, whether they start with `#`, sit between `"""` and `"""`, or sit between `/*` and `*/` (including `/** ... */`). The scope for `print` is `support.function.agen`. The scope for `@import` is `keyword.control.import.agen`. A defined function name is `entity.name.function.agen`. A defined class name is `entity.name.class.agen`.
 
 ## Project layout
 

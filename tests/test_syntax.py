@@ -25,6 +25,28 @@ class LexerTests(unittest.TestCase):
         with self.assertRaises(LexError):
             tokenize('"oops')
 
+    def test_triple_quote_and_block_comments_are_skipped(self):
+        tokens = tokenize('"""\nnote\n"""\n/* hide */\n/** doc */\n/***/\nprint(1)\n')
+        words = [t.value for t in tokens if t.type in (TokenType.IDENT, TokenType.NUMBER)]
+        self.assertEqual(words, ["print", 1])
+        printed = next(t for t in tokens if t.value == "print")
+        self.assertEqual(printed.line, 7)
+
+    def test_unterminated_block_comment(self):
+        with self.assertRaises(LexError) as caught:
+            tokenize("/* oops")
+        self.assertIn("block comment", str(caught.exception))
+
+    def test_doc_comment_before_class(self):
+        program = parse('""" A bank. """\n/** balance */\nclass Bank { init() { self.n = 1 } }\n')
+        self.assertIsInstance(program[0], n.ClassDef)
+        self.assertEqual(program[0].name, "Bank")
+
+    def test_python_import_is_rejected(self):
+        with self.assertRaises(ParseError) as caught:
+            parse("from stdlib import print\n")
+        self.assertIn("@import", str(caught.exception))
+
 
 class ParserTests(unittest.TestCase):
     def test_step_with_options_and_fallback_on_next_line(self):
