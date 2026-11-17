@@ -21,6 +21,8 @@ Agen they are part of the language:
 | an SDK per model provider                | `jev(text, questions)` for typed answers from TypeSafe JEV |
 | rewriting hot loops in C or Cython       | pure functions run on a built-in C++ VM automatically      |
 
+## Install
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ## Requirements for a first program
 
 You can write and run Agen with only Python. A cloud account, an API key, and extra packages are not required for the examples.
