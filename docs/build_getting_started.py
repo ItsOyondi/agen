@@ -225,8 +225,8 @@ def build():
         [
             ["Purple", "Control flow", "if  else  while  for  return"],
             ["Red", "Imports", "@import  @at  @imported"],
-            ["Blue", "Declarations", "let  fn  class  extends  init"],
-            ["Cyan", "Your functions", "fn greet  and  greet(...)"],
+            ["Blue", "Declarations", "let  fn  function  class  extends  init"],
+            ["Cyan", "Your functions", "fn greet  function greet  and  greet(...)"],
             ["Violet", "Your classes", "class Counter  and  PrimeCounter()"],
             ["Gold", "Operators", "and  or  not  in  with"],
             ["Teal", "Agentic forms", "workflow  step  agent  deploy  parallel"],
@@ -299,7 +299,7 @@ while x > 0 {
     pdf.code("agen run examples\\hello.agn")
 
     pdf.h1("7. Functions")
-    pdf.body("fn names a function. Parameters are listed in parentheses. return sends a value back. A function with no return produces null.")
+    pdf.body("fn or function names a function. Parameters are listed in parentheses. return sends a value back. A function with no return produces null.")
     pdf.code(
         """fn total(values) {
     let sum = 0

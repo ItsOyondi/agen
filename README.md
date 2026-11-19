@@ -139,7 +139,7 @@ deploy dev {
 
 ```agen
 let x = 10                     # declare (plain `x = 10` also works)
-fn add(a, b) { return a + b }
+fn add(a, b) { return a + b }   # function add(a, b) { ... } is the same
 if x > 5 { print("big") } else { print("small") }
 for item in [1, 2, 3] { print(item) }
 while x > 0 { x = x - 1 }
@@ -442,8 +442,8 @@ Keywords are split into colors. A new keyword is added to one of these groups in
 |-------|-------|----------|
 | Control flow | purple `#C586C0` | `if` `else` `while` `for` `return` |
 | Imports | red `#E06C75` | `@import` `@at` `@imported` |
-| Declarations | blue `#569CD6` | `let` `fn` `class` `extends` `init` |
-| Function names | cyan `#56B6C2` | `fn greet` and calls such as `greet(...)` or `counter.count_primes(...)` |
+| Declarations | blue `#569CD6` | `let` `fn` `function` `class` `extends` `init` |
+| Function names | cyan `#56B6C2` | `fn greet`, `function greet`, and calls such as `greet(...)` or `counter.count_primes(...)` |
 | Class names | violet `#C792EA` | `class Counter`, `extends Parent`, and uses such as `PrimeCounter()` |
 | Operators | gold `#D7BA7D` | `and` `or` `not` `in` `with` |
 | Agentic | teal `#4EC9B0` | `workflow` `step` `agent` `deploy` `parallel` |

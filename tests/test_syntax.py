@@ -1,6 +1,7 @@
+import tempfile
 import unittest
 
-from helpers import parse  # noqa: F401  (sets up sys.path)
+from helpers import parse, run_source  # noqa: F401  (sets up sys.path)
 
 from agen import nodes as n
 from agen.errors import LexError, ParseError
@@ -97,6 +98,27 @@ class ParserTests(unittest.TestCase):
                          ("Number", None, ["init", "add"]))
         self.assertEqual(child.parent, "Number")
         self.assertIsInstance(child.methods[0].body[0].value.callee, n.Member)
+
+    def test_function_keyword_defines_a_function(self):
+        tokens = tokenize("function greet(name) { return name }")
+        self.assertEqual(tokens[0].type, TokenType.KEYWORD)
+        self.assertEqual(tokens[0].value, "function")
+        program = parse("function greet(name) {\n  return name\n}\n")
+        self.assertIsInstance(program[0], n.FnDef)
+        self.assertEqual((program[0].name, program[0].params), ("greet", ["name"]))
+        methods = parse("class Box {\n  function value() { return 1 }\n}\n")[0].methods
+        self.assertEqual([method.name for method in methods], ["value"])
+        with tempfile.TemporaryDirectory() as state:
+            interp = run_source(
+                'function greet(name) { return "Hello, " + name }\n'
+                "class Box { function value() { return 7 } }\n"
+                'let out = greet("Agen")\n'
+                "let box = Box()\n"
+                "let n = box.value()\n",
+                state,
+            )
+        self.assertEqual(interp.globals.vars["out"], "Hello, Agen")
+        self.assertEqual(interp.globals.vars["n"], 7)
 
     def test_duplicate_method_is_rejected(self):
         with self.assertRaises(ParseError):

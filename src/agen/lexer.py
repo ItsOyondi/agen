@@ -20,7 +20,7 @@ class TokenType(Enum):
 
 
 KEYWORDS = frozenset({
-    "let", "fn", "return", "if", "else", "while", "for", "in",
+    "let", "fn", "function", "return", "if", "else", "while", "for", "in",
     "and", "or", "not", "true", "false", "null",
     "class", "extends", "init", "self", "super",
     "workflow", "step", "fallback", "with",

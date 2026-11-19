@@ -32,6 +32,7 @@ class Parser:
         self._keyword_statements: dict[str, Callable[[], n.Stmt]] = {
             "let": self._let,
             "fn": self._fn,
+            "function": self._fn,
             "class": self._class,
             "workflow": self._workflow,
             "step": self._step,
@@ -243,10 +244,10 @@ class Parser:
             method_line = self._peek().line
             if self._match_kw("init"):
                 method = n.FnDef("init", self._params(), self._block(), line=method_line)
-            elif self._check_kw("fn"):
+            elif self._check_kw("fn") or self._check_kw("function"):
                 method = self._fn()
             else:
-                raise self._error("expected 'fn' or 'init' in a class body")
+                raise self._error("expected 'fn', 'function', or 'init' in a class body")
             if method.name in seen:
                 raise ParseError(f"duplicate method '{method.name}'", method_line)
             seen.add(method.name)

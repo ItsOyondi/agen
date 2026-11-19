@@ -1,10 +1,10 @@
-fn add(a, b) {
+function add(a, b) {
     return a + b
 }
 
 class Counter {
     init() { self.n = 0 }
-    fn inc() {
+    function inc() {
         self.n = self.n + 1
         return self.n
     }

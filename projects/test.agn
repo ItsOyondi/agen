@@ -17,14 +17,14 @@
 
 # print(capital())
 class PrimeCounter {
-    fn count_primes(limit) {
+    function count_primes(limit) {
         count = 0
         for i in range(limit) {
             if i % 2 != 0 { count = count + 1 }
         }
         return count
     }
-    fn count_primes_parallel(limits) {    
+    function count_primes_parallel(limits) {    
         return pmap(self.count_primes, limits)
     }
 }
